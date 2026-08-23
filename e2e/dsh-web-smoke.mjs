@@ -52,7 +52,7 @@ try {
   page.on('pageerror', error => pageErrors.push(error))
 
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-  await dismissFirstRunNotice(page)
+  await completeBlockingOnboarding(page)
 
   const trigger = page.locator('[data-testid="cordis-devtools-trigger"]')
   await trigger.waitFor({ state: 'visible', timeout: 30_000 })
@@ -93,15 +93,24 @@ try {
   await rm(dshHome, { recursive: true, force: true })
 }
 
-async function dismissFirstRunNotice(page) {
-  const notice = page.getByRole('dialog', { name: /Internal Testing Notice|内测声明/ }).first()
-  const appeared = await notice.waitFor({ state: 'visible', timeout: 15_000 })
+async function completeBlockingOnboarding(page) {
+  const welcome = page.getByRole('dialog', { name: /Internal Testing Notice|内测声明/ }).first()
+  const welcomeAppeared = await welcome.waitFor({ state: 'visible', timeout: 15_000 })
     .then(() => true, () => false)
-  if (!appeared) return
+  if (welcomeAppeared) {
+    await welcome.getByRole('button', { name: /^(Continue|继续)$/ }).click()
+    await welcome.waitFor({ state: 'hidden', timeout: 15_000 })
+  }
 
-  const action = notice.getByRole('button', { name: /^(Continue|继续)$/ })
-  await action.click()
-  await notice.waitFor({ state: 'hidden', timeout: 15_000 })
+  const credential = page.getByRole('dialog', {
+    name: /Add an API key to get started|添加一个 API Key 开始使用/,
+  }).first()
+  const credentialAppeared = await credential.waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => true, () => false)
+  if (credentialAppeared) {
+    await credential.getByRole('button', { name: /^(Configure later|稍后配置)$/ }).click()
+    await credential.waitFor({ state: 'hidden', timeout: 15_000 })
+  }
 }
 
 async function getFreePort() {
