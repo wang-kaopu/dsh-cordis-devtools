@@ -28,7 +28,7 @@ interface EventsLike {
  */
 export class CordisAdapter {
   private nextListenerId = 1
-  private readonly listenerIds = new WeakMap<Function, number>()
+  private readonly listenerIds = new WeakMap<object, number>()
 
   constructor(private readonly ctx: Context) {}
 
@@ -41,7 +41,7 @@ export class CordisAdapter {
       const eventHooks = hooks[event] ?? []
       eventHooks.forEach((hook, order) => {
         result.push({
-          id: this.listenerId(hook.callback),
+          id: this.listenerId(hook),
           event: String(event),
           order,
           prepend: hook.prepend === true,
@@ -76,12 +76,11 @@ export class CordisAdapter {
     return null
   }
 
-  private listenerId(callback: HookLike['callback']): number {
-    if (typeof callback !== 'function') return this.nextListenerId++
-    const known = this.listenerIds.get(callback)
+  private listenerId(hook: HookLike): number {
+    const known = this.listenerIds.get(hook)
     if (known != null) return known
     const id = this.nextListenerId++
-    this.listenerIds.set(callback, id)
+    this.listenerIds.set(hook, id)
     return id
   }
 }
