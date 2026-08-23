@@ -8,6 +8,7 @@ export interface FibersViewProps {
   listeners: ListenerSnapshot[]
   dispatches: DispatchRecord[]
   onSelect(uid: number): void
+  onOpenEvent(name: string): void
 }
 
 export function FibersView({
@@ -16,12 +17,13 @@ export function FibersView({
   listeners,
   dispatches,
   onSelect,
+  onOpenEvent,
 }: FibersViewProps) {
   const activeFiber = visibleFibers.find(fiber => fiber.uid === activeFiberUid) ?? visibleFibers[0]
   const ownedListeners = activeFiber === undefined
     ? []
     : listeners.filter(listener => listener.owner?.uid === activeFiber.uid)
-  const ownedEventCount = new Set(ownedListeners.map(listener => listener.event)).size
+  const ownedEvents = [...new Set(ownedListeners.map(listener => listener.event))].sort()
   const recentDispatchHits = activeFiber === undefined
     ? 0
     : dispatches.filter(record => record.thisFiber?.uid === activeFiber.uid).length
@@ -57,7 +59,7 @@ export function FibersView({
 
             <div className={css.fiberStats}>
               <FiberStat label="owned listeners" value={ownedListeners.length} />
-              <FiberStat label="owned events" value={ownedEventCount} />
+              <FiberStat label="owned events" value={ownedEvents.length} />
               <FiberStat label="recent dispatch-context hits" value={recentDispatchHits} />
             </div>
 
@@ -79,10 +81,18 @@ export function FibersView({
                   </span>
                 )}
               </div>
-            </div>
-
-            <div className={css.fiberNotice}>
-              Live registry inventory. Dispatch-context hits come only from the current bounded Timeline window.
+              <div className={css.fiberInjectRow}>
+                <span className={css.detailLabel}>events</span>
+                {ownedEvents.length === 0 ? (
+                  <span className={css.muted}>none</span>
+                ) : (
+                  <span className={css.injectPills}>
+                    {ownedEvents.map(name => (
+                      <Pill key={name} onClick={() => { onOpenEvent(name) }}>{name}</Pill>
+                    ))}
+                  </span>
+                )}
+              </div>
             </div>
           </>
         )}

@@ -74,6 +74,15 @@ const snapshot: DevtoolsSnapshot = {
       registeredListeners: 0,
       thisFiber: null,
     },
+    {
+      id: 4,
+      timestamp: 1_787_496_000_750,
+      mode: 'emit',
+      event: 'legacy/event',
+      argCount: 0,
+      registeredListeners: 0,
+      thisFiber: { uid: 99, name: 'plugin-gone', state: 'active' },
+    },
   ],
 }
 
@@ -88,7 +97,7 @@ afterEach(async () => {
 })
 
 describe('EventExplorerAction', () => {
-  it('keeps Events, Timeline, and Fibers in one DSH-aligned shell with one snapshot poller', async () => {
+  it('keeps one snapshot poller while navigating Events, Timeline, and Fibers by live relationships', async () => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     let shouldFail = false
     let fetchCalls = 0
@@ -128,6 +137,22 @@ describe('EventExplorerAction', () => {
     expect(panel?.textContent).toContain('global')
     expect(panel?.textContent).not.toContain('waterfall')
 
+    const ownerLink = findButton(container, 'plugin-alpha')
+    expect(ownerLink).not.toBeUndefined()
+    await act(async () => { ownerLink?.click() })
+    let fiberDetail = container.querySelector<HTMLElement>('[data-testid="cordis-devtools-fiber-detail"]')
+    expect(fiberDetail?.textContent).toContain('plugin-alpha')
+    expect(container.querySelector<HTMLInputElement>('[data-testid="cordis-devtools-search"]')?.getAttribute('aria-label'))
+      .toBe('Search live Cordis fibers')
+
+    const ownedAlphaEvent = findButton(fiberDetail ?? container, 'alpha/event')
+    expect(ownedAlphaEvent).not.toBeUndefined()
+    await act(async () => { ownedAlphaEvent?.click() })
+    expect(container.querySelector<HTMLInputElement>('[data-testid="cordis-devtools-search"]')?.getAttribute('aria-label'))
+      .toBe('Search Cordis events')
+    expect(container.querySelector('[data-event-name="alpha/event"]')).not.toBeNull()
+    expect(fetchCalls).toBe(1)
+
     const eventSearch = container.querySelector<HTMLInputElement>('[data-testid="cordis-devtools-search"]')
     expect(eventSearch).not.toBeNull()
     await setInput(eventSearch, 'beta')
@@ -141,7 +166,7 @@ describe('EventExplorerAction', () => {
 
     expect(fetchCalls).toBe(1)
     const rows = [...container.querySelectorAll<HTMLElement>('[data-dispatch-id]')]
-    expect(rows.map(row => row.dataset.dispatchId)).toEqual(['3', '2', '1'])
+    expect(rows.map(row => row.dataset.dispatchId)).toEqual(['4', '3', '2', '1'])
     expect(panel?.textContent).toContain('Recent bounded dispatches')
     expect(panel?.textContent).toContain('waterfall')
     expect(panel?.textContent).toContain('emit')
@@ -149,12 +174,26 @@ describe('EventExplorerAction', () => {
     expect(panel?.textContent).not.toContain('duration')
     expect(panel?.textContent).not.toContain('outcome')
 
-    const row2 = container.querySelector<HTMLElement>('[data-dispatch-id="2"] [data-disclosure-row]')
-    await act(async () => { row2?.click() })
-    expect(container.querySelector('[data-dispatch-id="2"]')?.textContent).toContain('dispatch id')
-    expect(container.querySelector('[data-dispatch-id="2"]')?.textContent).toContain('arguments')
-    expect(container.querySelector('[data-dispatch-id="2"]')?.textContent).toContain('plugin-beta')
+    const missingRow = container.querySelector<HTMLElement>('[data-dispatch-id="4"]')
+    await act(async () => { missingRow?.querySelector<HTMLElement>('[data-disclosure-row]')?.click() })
+    expect(missingRow?.textContent).toContain('plugin-gone')
+    expect(missingRow?.textContent).toContain('not live')
+    expect(findButton(missingRow ?? container, 'plugin-gone')).toBeUndefined()
 
+    const row2 = container.querySelector<HTMLElement>('[data-dispatch-id="2"]')
+    await act(async () => { row2?.querySelector<HTMLElement>('[data-disclosure-row]')?.click() })
+    expect(row2?.textContent).toContain('dispatch id')
+    expect(row2?.textContent).toContain('arguments')
+    expect(row2?.textContent).toContain('plugin-beta')
+
+    const dispatchFiberLink = findButton(row2 ?? container, 'plugin-beta')
+    expect(dispatchFiberLink).not.toBeUndefined()
+    await act(async () => { dispatchFiberLink?.click() })
+    fiberDetail = container.querySelector<HTMLElement>('[data-testid="cordis-devtools-fiber-detail"]')
+    expect(fiberDetail?.textContent).toContain('plugin-beta')
+    expect(fetchCalls).toBe(1)
+
+    await act(async () => { findButton(container, 'Timeline')?.click() })
     const timelineSearch = container.querySelector<HTMLInputElement>('[data-testid="cordis-devtools-search"]')
     await setInput(timelineSearch, 'plugin-beta')
     expect([...container.querySelectorAll<HTMLElement>('[data-dispatch-id]')].map(row => row.dataset.dispatchId))
@@ -175,13 +214,15 @@ describe('EventExplorerAction', () => {
     expect(fetchCalls).toBe(1)
     expect([...container.querySelectorAll<HTMLElement>('[data-fiber-uid]')].map(row => row.dataset.fiberUid))
       .toEqual(['4', '5', '8', '9'])
-    const fiberDetail = container.querySelector<HTMLElement>('[data-testid="cordis-devtools-fiber-detail"]')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-fiber-uid="4"]')?.click() })
+    fiberDetail = container.querySelector<HTMLElement>('[data-testid="cordis-devtools-fiber-detail"]')
     expect(fiberDetail?.textContent).toContain('plugin-alpha')
     expect(fiberDetail?.textContent).toContain('owned listeners')
     expect(fiberDetail?.textContent).toContain('owned events')
     expect(fiberDetail?.textContent).toContain('recent dispatch-context hits')
     expect(fiberDetail?.textContent).toContain('logger')
     expect(fiberDetail?.textContent).toContain('root')
+    expect(fiberDetail?.textContent).not.toContain('Live registry inventory')
 
     const pendingFilter = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="cordis-devtools-fiber-state-filters"] button')]
       .find(button => button.textContent === 'pending')
@@ -215,7 +256,7 @@ describe('EventExplorerAction', () => {
   })
 })
 
-function findButton(container: HTMLElement, text: string): HTMLButtonElement | undefined {
+function findButton(container: ParentNode, text: string): HTMLButtonElement | undefined {
   return [...container.querySelectorAll<HTMLButtonElement>('button')]
     .find(button => button.textContent === text)
 }

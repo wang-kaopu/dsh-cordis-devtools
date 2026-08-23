@@ -6,14 +6,18 @@ export interface EventsViewProps {
   visibleEvents: Array<{ name: string; listenerCount: number }>
   activeEventName?: string
   activeListeners: ListenerSnapshot[]
+  liveFiberUids: ReadonlySet<number>
   onSelect(name: string): void
+  onOpenFiber(uid: number): void
 }
 
 export function EventsView({
   visibleEvents,
   activeEventName,
   activeListeners,
+  liveFiberUids,
   onSelect,
+  onOpenFiber,
 }: EventsViewProps) {
   const activeEvent = visibleEvents.find(event => event.name === activeEventName) ?? visibleEvents[0]
 
@@ -45,32 +49,42 @@ export function EventsView({
               <span className={css.detailMeta}>{activeEvent.listenerCount} live listeners</span>
             </div>
             <div className={css.listenerList}>
-              {activeListeners.map(listener => (
-                <article key={listener.id} data-listener-id={listener.id} className={css.listenerCard}>
-                  <div className={css.listenerHead}>
-                    <span className={css.order}>#{listener.order}</span>
-                    <code className={css.listenerId}>listener {listener.id}</code>
-                    <span className={css.flags}>
-                      {listener.prepend && <Pill>prepend</Pill>}
-                      {listener.global && <Pill>global</Pill>}
-                      {!listener.prepend && !listener.global && <span className={css.muted}>normal</span>}
-                    </span>
-                  </div>
-                  <div className={css.ownerRow}>
-                    <span className={css.ownerLabel}>owner</span>
-                    {listener.owner === null ? (
-                      <span className={css.muted}>unknown</span>
-                    ) : (
-                      <>
-                        <strong>{listener.owner.name}</strong>
-                        <span className={css.ownerMeta}>
-                          uid {listener.owner.uid ?? 'disposed'} · {listener.owner.state}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </article>
-              ))}
+              {activeListeners.map((listener) => {
+                const owner = listener.owner
+                const ownerIsLive = owner?.uid !== null
+                  && owner?.uid !== undefined
+                  && liveFiberUids.has(owner.uid)
+                return (
+                  <article key={listener.id} data-listener-id={listener.id} className={css.listenerCard}>
+                    <div className={css.listenerHead}>
+                      <span className={css.order}>#{listener.order}</span>
+                      <code className={css.listenerId}>listener {listener.id}</code>
+                      <span className={css.flags}>
+                        {listener.prepend && <Pill>prepend</Pill>}
+                        {listener.global && <Pill>global</Pill>}
+                        {!listener.prepend && !listener.global && <span className={css.muted}>normal</span>}
+                      </span>
+                    </div>
+                    <div className={css.ownerRow}>
+                      <span className={css.ownerLabel}>owner</span>
+                      {owner === null ? (
+                        <span className={css.muted}>unknown</span>
+                      ) : (
+                        <>
+                          {ownerIsLive && owner.uid !== null ? (
+                            <Pill onClick={() => { onOpenFiber(owner.uid as number) }}>{owner.name}</Pill>
+                          ) : (
+                            <strong>{owner.name}</strong>
+                          )}
+                          <span className={css.ownerMeta}>
+                            uid {owner.uid ?? 'disposed'} · {owner.state}{ownerIsLive ? '' : ' · not live'}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
             </div>
           </>
         )}
