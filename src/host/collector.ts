@@ -84,9 +84,10 @@ export class ObserverCollector implements CordisDevtoolsService {
       this.notify()
     }, { global: true })
 
-    on('internal/listener', function () {
+    on('internal/listener', () => {
       // Listener data is read live from ctx.events._hooks. This event only
       // invalidates consumers so future UIs can refresh without polling.
+      this.notify()
     }, { global: true })
   }
 
