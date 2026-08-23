@@ -33,11 +33,12 @@ src/client/port.ts
 src/client/store.ts
     │  one visible-only latest-snapshot refresh state
     ▼
-src/client/EventExplorer.tsx
+src/client/DevtoolsShell.tsx
     │  single additive sidebar DevTools shell
     ├─ Events view
     ├─ Timeline view
     └─ Fibers view
+         └─ live Effects tree
          │
          ▼
 DSH UI primitives + package-owned CSS layout
@@ -51,9 +52,11 @@ The adapter also owns normalization of compact fiber references and live fiber i
 
 For live plugin inventory, the adapter uses Cordis' public registry path: `ctx.registry.values()` and each runtime's live `fibers`. `DevtoolsSnapshot.fibers` therefore means current live registry membership rather than a history of fibers the observer happened to encounter.
 
+Each live fiber's labeled effect metadata is projected directly from `fiber.getEffects()` as `EffectSnapshot { label, children }`. The adapter preserves only the diagnostic label/tree shape; raw disposer/function references, config, arguments, and stacks do not cross the snapshot boundary.
+
 ### Collector
 
-The collector listens to authoritative Cordis lifecycle and dispatch signals and owns bounded in-memory dispatch history. It does not maintain a second historical fiber registry. Live fiber data is snapped from the adapter on demand.
+The collector listens to authoritative Cordis lifecycle and dispatch signals and owns bounded in-memory dispatch history. It does not maintain a second historical fiber or effect registry. Live fiber/effect data is snapped from the adapter on demand.
 
 `DispatchRecord` captures a pre-execution occurrence: runtime-local id, timestamp, invocation mode, event name, argument count, registered-listener count, and dispatch context when available. It does not prove duration, completion outcome, which listeners ultimately executed, or waterfall short-circuit behavior.
 
@@ -65,7 +68,7 @@ The collector listens to authoritative Cordis lifecycle and dispatch signals and
 
 Event registration and dispatch remain separate concepts. `EventSnapshot` represents the current live listener registry; invocation mode remains on concrete `DispatchRecord` entries because Cordis chooses `emit`, `parallel`, `serial`, `bail`, or `waterfall` per call.
 
-`FiberSnapshot` is a compact reference used by listener ownership and historical dispatch context. `LiveFiberSnapshot` is a stronger live-registry record with a non-null uid plus parent and inject-name metadata. Historical dispatch references can outlive a fiber that no longer exists in `DevtoolsSnapshot.fibers`; that difference is deliberate.
+`FiberSnapshot` is a compact reference used by listener ownership and historical dispatch context. `LiveFiberSnapshot` is a stronger live-registry record with a non-null uid plus parent, inject-name, and labeled effect-tree metadata. Historical dispatch references can outlive a fiber that no longer exists in `DevtoolsSnapshot.fibers`; that difference is deliberate. Effects remain live-only and are never copied into historical dispatch records.
 
 ### Host-to-client transport
 
@@ -77,9 +80,9 @@ The channel is installed through `ctx.inject(['connection'], ...)`, so Connectio
 
 The package emits a real DSH browser module at `./client`, separate from the Node Host artifact. The browser bundle registers through `window.__ModuleLoader__`, requests the runtime services through Cordis, and keeps React plus DSH UI primitives as platform-provided module identities.
 
-`src/client/port.ts` is the transport compatibility seam. `src/client/store.ts` owns only the latest snapshot plus refresh/loading/stale state. The React surface renders that snapshot and contributes once to `sidebar.footer.action`; it does not maintain a second listener registry, fiber registry, or incremental dispatch database.
+`src/client/port.ts` is the transport compatibility seam. `src/client/store.ts` owns only the latest snapshot plus refresh/loading/stale state. The React surface renders that snapshot and contributes once to `sidebar.footer.action`; it does not maintain a second listener registry, fiber/effect registry, or incremental dispatch database.
 
-Opening the panel fetches immediately and starts one one-second polling loop. Events/Timeline/Fibers view switching is local presentation state and does not change the refresh lifecycle. Periodic refresh is silent; closing/disposal aborts an in-flight request, stops the timer, and requests never overlap.
+Opening the panel fetches immediately and starts one one-second polling loop. Events/Timeline/Fibers view switching and cross-view navigation are local presentation state and do not change the refresh lifecycle. Periodic refresh is silent; closing/disposal aborts an in-flight request, stops the timer, and requests never overlap.
 
 Because the Host ring buffer is bounded and refresh is periodic, the Timeline is explicitly a recent window rather than a lossless audit stream. The Fibers view may derive a **recent dispatch-context hit count** from that bounded window, but it must not present the value as a lifetime execution count. A future watch/stream transport requires a separate decision covering revisions, gaps, reconnect, cancellation, delivery, and backpressure.
 
@@ -87,7 +90,9 @@ Because the Host ring buffer is bounded and refresh is periodic, the Timeline is
 
 Controls reuse `@deepseek-ai/dsh-client-ui-primitives` whenever the semantics match: buttons, search inputs, pills, tooltips, disclosure rows, outside-dismiss behavior, and shared icons. This lets focus/hover/control sizing and theme tokens follow DSH rather than a local imitation.
 
-DevTools-specific composition remains package-owned. `DevtoolsPanel.module.css` defines floating-panel geometry, Events/Fibers grids, Timeline list/detail layout, and responsive behavior using `--dsw-*` tokens. The rule is **DSH atoms for shared interaction semantics, local CSS for DevTools information architecture**.
+DevTools-specific composition remains package-owned. `DevtoolsPanel.module.css` defines floating-panel geometry, Events/Fibers grids, Timeline list/detail layout, Effects tree indentation, and responsive behavior using `--dsw-*` tokens. The rule is **DSH atoms for shared interaction semantics, local CSS for DevTools information architecture**.
+
+The Effects tree uses DSH `DisclosureRow` for nodes with children. Leaf effects stay non-expandable, and the UI displays only the labels/tree already present in the live snapshot; it does not infer missing effects from listeners or services.
 
 Visual hierarchy prefers layer backgrounds, spacing, active state, and DSH primitives. Separators and high-contrast borders are not default structure; add them only where they are necessary for comprehension.
 
@@ -98,11 +103,11 @@ Visual hierarchy prefers layer backgrounds, spacing, active state, and DSH primi
 1. **Observer mode is behavior-neutral.** It registers observers but does not wrap target listeners, replace `next()`, reorder hooks, or mutate dispatched arguments.
 2. **Unknown stays unknown.** Derived values are labeled as derived; unsupported values are absent/null rather than fabricated.
 3. **Collection is bounded.** Timeline-like structures have fixed or configured retention, and bounded views do not claim audit-log completeness.
-4. **Metadata-first privacy.** Raw event arguments, prompts, tool results, plugin config, file contents, and credentials are not collected by default.
+4. **Metadata-first privacy.** Raw event arguments, prompts, tool results, plugin config, file contents, credentials, and raw effect functions/disposers are not collected by default.
 5. **Lifecycle ownership is explicit.** Every observer/subscription/channel/timer is disposed with the owning plugin or UI lifecycle.
 6. **Transport does not become a second source of truth.** Host RPC returns the collector snapshot; Client code does not recreate Cordis semantics.
 7. **UI reuse follows semantics.** Prefer DSH primitives for shared controls and behavior; keep only domain-specific composition local.
-8. **Live inventory stays live.** `DevtoolsSnapshot.fibers` reflects Cordis registry membership; historical dispatch references do not get promoted into the live list.
+8. **Live inventory stays live.** `DevtoolsSnapshot.fibers` and their effects reflect current Cordis runtime metadata; historical dispatch references do not get promoted into the live list.
 
 ## Instrumented mode boundary
 
@@ -112,6 +117,6 @@ Before adding that mode, create or update an architecture Agent Note covering wr
 
 ## Testing layers
 
-Pure helpers use unit tests. Runtime ownership, hook behavior, and live registry semantics use real `@deepseek-ai/cordis`. Host-to-client adapters get contract tests at the Connection seam. Visible UI gets jsdom/React integration coverage using the real DSH UI primitives through Vitest's Vite transform. The built browser artifact is executed by `verify:client-bundle` to prove the actual `window.__ModuleLoader__` handoff and platform primitive request work rather than relying only on source-level tests.
+Pure helpers use unit tests. Runtime ownership, hook behavior, live registry semantics, and effect-tree projection use real `@deepseek-ai/cordis`. Host-to-client adapters get contract tests at the Connection seam. Visible UI gets jsdom/React integration coverage using the real DSH UI primitives through Vitest's Vite transform. The built browser artifact is executed by `verify:client-bundle` to prove the actual `window.__ModuleLoader__` handoff and platform primitive request work rather than relying only on source-level tests.
 
-A full DSH browser/profile smoke path should be added when maintaining that harness becomes cheaper than repeatedly reasoning about installed composition by hand, or when a UI behavior depends on real browser layout beyond the current component/build boundaries.
+The independent real DSH Web smoke installs the current checkout through the published DSH CLI into a disposable profile, boots DSH Web, completes supported onboarding, opens the sidebar DevTools surface in Chromium, and checks the composed Events/Timeline/Fibers path including the Effects surface. It validates external-plugin composition rather than duplicating detailed component assertions.
