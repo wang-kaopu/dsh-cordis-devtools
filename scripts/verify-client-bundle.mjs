@@ -40,16 +40,35 @@ const jsxRuntime = {
   jsx() { return null },
   jsxs() { return null },
 }
+const primitive = () => null
+const uiPrimitives = {
+  Button: primitive,
+  DisclosureRow: primitive,
+  IconCloseOutline16: primitive,
+  IconCordisPluginOutline14: primitive,
+  IconRefreshOutline16: primitive,
+  IconSearchOutline16: primitive,
+  Input: primitive,
+  Pill: primitive,
+  Tooltip: primitive,
+  useDismissOnOutsidePointer() {},
+}
+let requestedPrimitives = false
 const plugin = registration.factory((specifier) => {
   if (specifier === 'react') return react
   if (specifier === 'react/jsx-runtime') return jsxRuntime
+  if (specifier === '@deepseek-ai/dsh-client-ui-primitives') {
+    requestedPrimitives = true
+    return uiPrimitives
+  }
   throw new Error(`unexpected client external: ${specifier}`)
 })
 
+assert.equal(requestedPrimitives, true, 'client bundle did not resolve DSH UI primitives from the module table')
 assert.equal(plugin.name, 'dsh-cordis-devtools')
 assert.equal(typeof plugin.apply, 'function')
 assert.ok(Array.isArray(plugin.inject))
 assert.ok(plugin.inject.includes('slots'))
 assert.ok(plugin.inject.includes('connection'))
 
-console.log('verify-client-bundle: DSH module-loader registration is executable')
+console.log('verify-client-bundle: DSH module-loader registration and UI primitive external are executable')

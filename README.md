@@ -8,9 +8,11 @@ Runtime inspector and event profiler for DeepSeek Harness / Cordis.
 
 - Live Event / Listener Registry backed by the real Cordis listener registry.
 - Listener execution order, `prepend` / `global`, and owning fiber metadata.
-- Bounded dispatch observation on the Host.
-- Web Event Explorer available from the DSH sidebar footer.
+- Bounded recent Dispatch Timeline with invocation mode and dispatch-context metadata.
+- One Web DevTools surface in the DSH sidebar footer with `Events` and `Timeline` views.
+- Event/fiber search and dispatch-mode filtering.
 - Loopback-only Host → browser snapshot transport through DSH Connection RPC.
+- DSH-native control chrome through `@deepseek-ai/dsh-client-ui-primitives`.
 
 ## Architecture
 
@@ -25,7 +27,7 @@ Cordis runtime
                               ├─ event registry
                               ├─ listener snapshot
                               ├─ observed fibers
-                              └─ dispatch ring buffer
+                              └─ bounded dispatch ring buffer
                                       │
                                       ▼
                            CordisDevtoolsService
@@ -39,15 +41,21 @@ Cordis runtime
                                                 loopback-only RPC
                                                      │
                                                      ▼
-                                             Web Event Explorer
-                                        sidebar.footer.action
+                                           Cordis DevTools Web
+                                       sidebar.footer.action
+                                         ├─ Events
+                                         └─ Timeline
 ```
 
 Direct Cordis internal access is isolated behind `src/host/cordis-adapter.ts`. The Web client consumes only the serializable shared snapshot contract and never reaches into Host Cordis internals. See [the architecture document](docs/architecture.md) for the invariants and observer/instrumented-mode boundary.
 
-## Web Event Explorer
+## Web Cordis DevTools
 
-The first Web surface lists live events and lets you inspect their listener registrations:
+The single sidebar surface contains two views.
+
+### Events
+
+The Events view lists live events and their listener registrations:
 
 - event name and live listener count;
 - listener execution order and runtime-local id;
@@ -55,9 +63,25 @@ The first Web surface lists live events and lets you inspect their listener regi
 - `prepend` and `global` flags;
 - event-name search.
 
-Opening the panel refreshes immediately and starts a one-second polling loop. Polling stops when the panel closes. Failed refreshes keep the last successful snapshot visible but clearly mark it stale.
+It intentionally does **not** infer a static event dispatch mode. `emit`, `parallel`, `serial`, `bail`, and `waterfall` are invocation-level facts and belong to concrete dispatch records.
 
-The Event Explorer intentionally does **not** infer a static event dispatch mode. `emit`, `parallel`, `serial`, `bail`, and `waterfall` are invocation-level facts and remain attached to concrete dispatch records.
+### Timeline
+
+The Timeline view renders the current bounded Host dispatch window newest-first. It supports event / dispatch-context fiber search and filters for modes actually present in the snapshot.
+
+Each row can expose only facts available from `DispatchRecord`: timestamp, invocation mode, event name, registered-listener count, runtime-local dispatch id, argument count, and known dispatch-context fiber metadata.
+
+The Timeline is a **recent bounded view, not a complete or lossless audit log**. The Host ring buffer can overwrite older records between browser polls. Observer mode also does not know generic duration, completion outcome, executed-listener identity, per-listener timing, or waterfall short-circuit attribution.
+
+## DSH UI alignment
+
+Web controls reuse DSH's shared `@deepseek-ai/dsh-client-ui-primitives` when the semantics match: buttons, inputs, pills, tooltips, disclosure rows, outside-dismiss behavior, and icons. DevTools-specific panel/grid/list geometry remains package-owned CSS composed from `--dsw-*` tokens.
+
+`@deepseek-ai/dsh-client-ui-primitives` stays external in `lib/client.js`; DSH Web supplies the platform-module instance through `window.__ModuleLoader__`. The package does not bundle a second copy of the DSH control library.
+
+## Refresh semantics
+
+Opening the panel refreshes immediately and starts one one-second polling loop. Switching between Events and Timeline does not start another poller. Polling stops when the panel closes, and an in-flight request is aborted. Failed refreshes keep the last successful snapshot visible but mark it stale.
 
 ## Project structure
 
@@ -72,7 +96,8 @@ src/
 │  ├─ rpc.ts              # transport channel constants
 │  └─ types.ts            # serializable snapshot contracts
 ├─ client/
-│  ├─ EventExplorer.tsx   # sidebar Event Explorer panel
+│  ├─ EventExplorer.tsx   # shared Events / Timeline DevTools shell
+│  ├─ DevtoolsPanel.module.css
 │  ├─ port.ts             # Connection RPC snapshot adapter
 │  ├─ store.ts            # visible-only refresh state
 │  └─ index.ts            # DSH browser client plugin entry
@@ -92,7 +117,7 @@ src/
 
 - Event explorer ✓
 - Listener ordering view ✓
-- Dispatch timeline
+- Dispatch timeline ✓
 - Fiber inspector
 
 ### v0.3 — Instrumented waterfall mode
@@ -130,7 +155,7 @@ pnpm build
 pnpm verify:client-bundle
 ```
 
-`verify:client-bundle` executes the built `lib/client.js` handoff and verifies that it registers an executable `dsh-cordis-devtools` plugin through `window.__ModuleLoader__`.
+`verify:client-bundle` executes the built `lib/client.js` handoff, verifies that it registers an executable `dsh-cordis-devtools` plugin through `window.__ModuleLoader__`, and proves the bundle requests DSH UI primitives from the shared module table rather than bundling its own copy.
 
 ## Agent-native workflow
 
@@ -140,9 +165,9 @@ The process is intentionally smaller than DeepSeek Harness's full development sy
 
 ## Important semantics
 
-`internal/dispatch` fires before Cordis resolves and executes the public event listeners. Observer mode therefore records dispatch occurrence and registered-listener metadata, **not** generic dispatch duration or per-listener duration. Those measurements require explicit instrumentation and are intentionally deferred.
+`internal/dispatch` fires before Cordis resolves and executes the public event listeners. Observer mode therefore records dispatch occurrence and registered-listener metadata, **not** generic dispatch duration, completion outcome, or per-listener duration. Those measurements require explicit instrumentation and are intentionally deferred.
 
-Raw event arguments, prompts, tool results, file contents, and credentials are not collected by the current Web Event Explorer.
+Raw event arguments, prompts, tool results, file contents, and credentials are not collected by the current Web DevTools surface.
 
 ## License
 
