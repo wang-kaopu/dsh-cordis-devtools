@@ -27,6 +27,7 @@ const snapshot: DevtoolsSnapshot = {
     state: 'active',
     parent: { uid: 0, name: 'root', state: 'active' },
     inject: [],
+    effects: [],
   }],
   dispatches: [],
 }
