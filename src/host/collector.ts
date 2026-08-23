@@ -5,7 +5,6 @@ import type {
   DispatchMode,
   DispatchRecord,
   EventSnapshot,
-  FiberSnapshot,
   ListenerSnapshot,
 } from '../shared/types.js'
 import { CordisAdapter } from './cordis-adapter.js'
@@ -18,10 +17,10 @@ export interface CollectorOptions {
 export class ObserverCollector implements CordisDevtoolsService {
   private nextDispatchId = 1
   private readonly dispatches: RingBuffer<DispatchRecord>
-  private readonly observedFibers = new Map<string, FiberSnapshot>()
   private readonly subscribers = new Set<() => void>()
   private readonly adapter: CordisAdapter
   private listenerNotificationQueued = false
+  private pluginNotificationQueued = false
 
   constructor(
     private readonly ctx: Context,
@@ -29,19 +28,17 @@ export class ObserverCollector implements CordisDevtoolsService {
   ) {
     this.adapter = new CordisAdapter(ctx)
     this.dispatches = new RingBuffer(options.maxDispatches ?? 500)
-    this.seedFibersFromListeners()
     this.installObservers()
   }
 
   snapshot(): DevtoolsSnapshot {
     const listeners = this.adapter.snapshotListeners()
-    for (const listener of listeners) this.rememberFiber(listener.owner)
 
     return {
       generatedAt: Date.now(),
       events: buildEventSnapshots(listeners),
       listeners,
-      fibers: [...this.observedFibers.values()].sort(compareFibers),
+      fibers: this.adapter.snapshotFibers(),
       dispatches: this.dispatches.toArray(),
     }
   }
@@ -65,7 +62,6 @@ export class ObserverCollector implements CordisDevtoolsService {
 
     on('internal/dispatch', (mode: DispatchMode, event: string, args: unknown[], thisArg: unknown) => {
       const thisFiber = this.adapter.snapshotFiber(thisArg)
-      this.rememberFiber(thisFiber)
       this.dispatches.push({
         id: this.nextDispatchId++,
         timestamp: Date.now(),
@@ -78,13 +74,14 @@ export class ObserverCollector implements CordisDevtoolsService {
       this.notify()
     }, { global: true })
 
-    on('internal/plugin', (fiber: unknown) => {
-      this.rememberFiber(this.adapter.snapshotFiber(fiber))
-      this.notify()
+    on('internal/plugin', () => {
+      // A disposing fiber has its uid cleared before Cordis removes it from
+      // runtime.fibers. Defer the invalidation so subscriber refreshes happen
+      // after the registry mutation settles in the current turn.
+      this.schedulePluginNotification()
     }, { global: true })
 
-    on('internal/status', (fiber: unknown) => {
-      this.rememberFiber(this.adapter.snapshotFiber(fiber))
+    on('internal/status', () => {
       this.notify()
     }, { global: true })
 
@@ -105,15 +102,13 @@ export class ObserverCollector implements CordisDevtoolsService {
     })
   }
 
-  private seedFibersFromListeners(): void {
-    for (const listener of this.adapter.snapshotListeners()) {
-      this.rememberFiber(listener.owner)
-    }
-  }
-
-  private rememberFiber(fiber: FiberSnapshot | null): void {
-    if (fiber == null) return
-    this.observedFibers.set(fiberKey(fiber), fiber)
+  private schedulePluginNotification(): void {
+    if (this.pluginNotificationQueued) return
+    this.pluginNotificationQueued = true
+    queueMicrotask(() => {
+      this.pluginNotificationQueued = false
+      this.notify()
+    })
   }
 
   private notify(): void {
@@ -139,15 +134,4 @@ function buildEventSnapshots(listeners: ListenerSnapshot[]): EventSnapshot[] {
       listenerIds,
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
-}
-
-function fiberKey(fiber: FiberSnapshot): string {
-  return fiber.uid == null ? `name:${fiber.name}` : `uid:${fiber.uid}`
-}
-
-function compareFibers(a: FiberSnapshot, b: FiberSnapshot): number {
-  if (a.uid == null && b.uid == null) return a.name.localeCompare(b.name)
-  if (a.uid == null) return 1
-  if (b.uid == null) return -1
-  return a.uid - b.uid
 }
