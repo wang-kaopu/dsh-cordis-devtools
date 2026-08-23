@@ -18,7 +18,7 @@ import {
   Tooltip,
   useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DispatchRecord, ListenerSnapshot } from '../shared/types.js'
+import type { DispatchRecord, ListenerSnapshot, LiveFiberSnapshot } from '../shared/types.js'
 import type { EventExplorerStore } from './store.js'
 import css from './DevtoolsPanel.module.css'
 
@@ -27,7 +27,7 @@ export interface EventExplorerActionProps {
   store: EventExplorerStore
 }
 
-type DevtoolsView = 'events' | 'timeline'
+type DevtoolsView = 'events' | 'timeline' | 'fibers'
 
 export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
@@ -35,7 +35,9 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
   const [view, setView] = useState<DevtoolsView>('events')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<string>()
+  const [selectedFiberUid, setSelectedFiberUid] = useState<number>()
   const [modeFilter, setModeFilter] = useState<string>('all')
+  const [fiberStateFilter, setFiberStateFilter] = useState<string>('all')
   const [expandedDispatches, setExpandedDispatches] = useState<ReadonlySet<number>>(new Set())
   const [anchor, setAnchor] = useState<{ left: number; bottom: number }>()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -64,6 +66,7 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
   }, [open, wide])
 
   const events = state.snapshot?.events ?? []
+  const fibers = state.snapshot?.fibers ?? []
   const dispatches = state.snapshot?.dispatches ?? []
   const normalizedQuery = query.trim().toLowerCase()
   const visibleEvents = useMemo(
@@ -81,6 +84,16 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
     }
   }, [events, selected])
 
+  useEffect(() => {
+    if (fibers.length === 0) {
+      if (selectedFiberUid !== undefined) setSelectedFiberUid(undefined)
+      return
+    }
+    if (selectedFiberUid === undefined || !fibers.some(fiber => fiber.uid === selectedFiberUid)) {
+      setSelectedFiberUid(fibers[0].uid)
+    }
+  }, [fibers, selectedFiberUid])
+
   const activeEvent = visibleEvents.find(event => event.name === selected) ?? visibleEvents[0]
   const listenersById = useMemo(
     () => new Map((state.snapshot?.listeners ?? []).map(listener => [listener.id, listener])),
@@ -94,10 +107,18 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
     () => [...new Set(dispatches.map(record => String(record.mode)))].sort(),
     [dispatches],
   )
+  const fiberStates = useMemo(
+    () => [...new Set(fibers.map(fiber => fiber.state))].sort(),
+    [fibers],
+  )
 
   useEffect(() => {
     if (modeFilter !== 'all' && !modes.includes(modeFilter)) setModeFilter('all')
   }, [modeFilter, modes])
+
+  useEffect(() => {
+    if (fiberStateFilter !== 'all' && !fiberStates.includes(fiberStateFilter)) setFiberStateFilter('all')
+  }, [fiberStateFilter, fiberStates])
 
   const visibleDispatches = useMemo(() => {
     return [...dispatches]
@@ -109,6 +130,16 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
           || record.thisFiber?.name.toLowerCase().includes(normalizedQuery) === true
       })
   }, [dispatches, modeFilter, normalizedQuery])
+
+  const visibleFibers = useMemo(() => {
+    return fibers
+      .filter(fiber => fiberStateFilter === 'all' || fiber.state === fiberStateFilter)
+      .filter((fiber) => {
+        if (normalizedQuery.length === 0) return true
+        return fiber.name.toLowerCase().includes(normalizedQuery)
+          || String(fiber.uid).includes(normalizedQuery)
+      })
+  }, [fiberStateFilter, fibers, normalizedQuery])
 
   const toggleDispatch = (id: number): void => {
     setExpandedDispatches((current) => {
@@ -128,7 +159,20 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
     ? 'Runtime snapshot unavailable'
     : view === 'events'
       ? `${state.snapshot.events.length} events · ${state.snapshot.listeners.length} listeners`
-      : `${state.snapshot.dispatches.length} recent dispatches · bounded history`
+      : view === 'timeline'
+        ? `${state.snapshot.dispatches.length} recent dispatches · bounded history`
+        : `${state.snapshot.fibers.length} live fibers · Cordis registry`
+
+  const searchLabel = view === 'events'
+    ? 'Search Cordis events'
+    : view === 'timeline'
+      ? 'Search Cordis dispatches'
+      : 'Search live Cordis fibers'
+  const searchPlaceholder = view === 'events'
+    ? 'Search events…'
+    : view === 'timeline'
+      ? 'Search event or dispatch context…'
+      : 'Search fiber name or uid…'
 
   return (
     <div ref={rootRef} data-cordis-devtools="root" className={css.root}>
@@ -195,6 +239,7 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
           <div className={css.viewBar} aria-label="Cordis DevTools views">
             <Pill active={view === 'events'} onClick={() => { switchView('events') }}>Events</Pill>
             <Pill active={view === 'timeline'} onClick={() => { switchView('timeline') }}>Timeline</Pill>
+            <Pill active={view === 'fibers'} onClick={() => { switchView('fibers') }}>Fibers</Pill>
           </div>
 
           <div className={css.toolbar}>
@@ -202,8 +247,8 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
               icon={<IconSearchOutline16 size={16} />}
               className={css.search}
               data-testid="cordis-devtools-search"
-              aria-label={view === 'events' ? 'Search Cordis events' : 'Search Cordis dispatches'}
-              placeholder={view === 'events' ? 'Search events…' : 'Search event or dispatch context…'}
+              aria-label={searchLabel}
+              placeholder={searchPlaceholder}
               value={query}
               onChange={event => { setQuery(event.currentTarget.value) }}
             />
@@ -229,6 +274,21 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
             </div>
           )}
 
+          {view === 'fibers' && state.snapshot !== undefined && (
+            <div className={css.modeFilters} data-testid="cordis-devtools-fiber-state-filters">
+              <Pill active={fiberStateFilter === 'all'} onClick={() => { setFiberStateFilter('all') }}>all</Pill>
+              {fiberStates.map(fiberState => (
+                <Pill
+                  key={fiberState}
+                  active={fiberStateFilter === fiberState}
+                  onClick={() => { setFiberStateFilter(fiberState) }}
+                >
+                  {fiberState}
+                </Pill>
+              ))}
+            </div>
+          )}
+
           <div className={css.body}>
             {state.snapshot === undefined ? (
               <div className={css.empty}>
@@ -241,11 +301,19 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
                 activeListeners={activeListeners}
                 onSelect={setSelected}
               />
-            ) : (
+            ) : view === 'timeline' ? (
               <TimelineView
                 dispatches={visibleDispatches}
                 expanded={expandedDispatches}
                 onToggle={toggleDispatch}
+              />
+            ) : (
+              <FibersView
+                visibleFibers={visibleFibers}
+                activeFiberUid={selectedFiberUid}
+                listeners={state.snapshot.listeners}
+                dispatches={state.snapshot.dispatches}
+                onSelect={setSelectedFiberUid}
               />
             )}
           </div>
@@ -382,6 +450,102 @@ function TimelineView({
         </div>
       )}
     </main>
+  )
+}
+
+function FibersView({
+  visibleFibers,
+  activeFiberUid,
+  listeners,
+  dispatches,
+  onSelect,
+}: {
+  visibleFibers: LiveFiberSnapshot[]
+  activeFiberUid?: number
+  listeners: ListenerSnapshot[]
+  dispatches: DispatchRecord[]
+  onSelect(uid: number): void
+}) {
+  const activeFiber = visibleFibers.find(fiber => fiber.uid === activeFiberUid) ?? visibleFibers[0]
+  const ownedListeners = activeFiber === undefined
+    ? []
+    : listeners.filter(listener => listener.owner?.uid === activeFiber.uid)
+  const ownedEventCount = new Set(ownedListeners.map(listener => listener.event)).size
+  const recentDispatchHits = activeFiber === undefined
+    ? 0
+    : dispatches.filter(record => record.thisFiber?.uid === activeFiber.uid).length
+
+  return (
+    <div className={css.fibersBody}>
+      <nav aria-label="Live Cordis fibers" className={css.fiberList}>
+        {visibleFibers.length === 0 && <div className={css.emptyList}>No matching live fibers.</div>}
+        {visibleFibers.map(fiber => (
+          <button
+            type="button"
+            key={fiber.uid}
+            data-fiber-uid={fiber.uid}
+            className={`${css.fiberButton} ${activeFiber?.uid === fiber.uid ? css.fiberButtonActive : ''}`}
+            onClick={() => { onSelect(fiber.uid) }}
+          >
+            <span className={css.fiberName}>{fiber.name}</span>
+            <span className={css.fiberListMeta}>uid {fiber.uid}</span>
+            <Pill>{fiber.state}</Pill>
+          </button>
+        ))}
+      </nav>
+
+      <main className={css.fiberDetail} data-testid="cordis-devtools-fiber-detail">
+        {activeFiber === undefined ? (
+          <div className={css.empty}>Select a live fiber.</div>
+        ) : (
+          <>
+            <div className={css.detailHeader}>
+              <strong className={css.eventHeading}>{activeFiber.name}</strong>
+              <span className={css.detailMeta}>uid {activeFiber.uid} · {activeFiber.state}</span>
+            </div>
+
+            <div className={css.fiberStats}>
+              <FiberStat label="owned listeners" value={ownedListeners.length} />
+              <FiberStat label="owned events" value={ownedEventCount} />
+              <FiberStat label="recent dispatch-context hits" value={recentDispatchHits} />
+            </div>
+
+            <div className={css.fiberFacts}>
+              <Detail label="state" value={activeFiber.state} />
+              <Detail
+                label="parent"
+                value={activeFiber.parent === null
+                  ? 'unknown'
+                  : `${activeFiber.parent.name} · uid ${activeFiber.parent.uid ?? 'disposed'} · ${activeFiber.parent.state}`}
+              />
+              <div className={css.fiberInjectRow}>
+                <span className={css.detailLabel}>inject</span>
+                {activeFiber.inject.length === 0 ? (
+                  <span className={css.muted}>none</span>
+                ) : (
+                  <span className={css.injectPills}>
+                    {activeFiber.inject.map(name => <Pill key={name}>{name}</Pill>)}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className={css.fiberNotice}>
+              Live registry inventory. Dispatch-context hits come only from the current bounded Timeline window.
+            </div>
+          </>
+        )}
+      </main>
+    </div>
+  )
+}
+
+function FiberStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className={css.fiberStat}>
+      <strong className={css.fiberStatValue}>{value}</strong>
+      <span className={css.fiberStatLabel}>{label}</span>
+    </div>
   )
 }
 
