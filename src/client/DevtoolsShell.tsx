@@ -228,15 +228,15 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
             <div className={css.headerActions}>
               <Tooltip label="Refresh runtime snapshot" side="bottom" delayMs={400}>
                 <Button
-                  variant="toolbar"
+                  variant="ghost"
                   size="sm"
                   icon={<IconRefreshOutline16 size={16} />}
+                  className={css.iconOnly}
                   data-testid="cordis-devtools-refresh"
+                  aria-label="Refresh runtime snapshot"
                   disabled={state.loading}
                   onClick={() => { void store.refresh() }}
-                >
-                  Refresh
-                </Button>
+                />
               </Tooltip>
               <Tooltip label="Close Cordis DevTools" side="bottom" delayMs={400}>
                 <Button
