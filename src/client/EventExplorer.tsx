@@ -170,7 +170,7 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
                   disabled={state.loading}
                   onClick={() => { void store.refresh() }}
                 >
-                  {state.loading ? 'Refreshing…' : 'Refresh'}
+                  Refresh
                 </Button>
               </Tooltip>
               <Tooltip label="Close Cordis DevTools" side="bottom" delayMs={400}>
