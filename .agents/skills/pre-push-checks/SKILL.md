@@ -40,4 +40,4 @@ In the PR, list the exact commands or real-world checks performed. Do not say â€
 
 ## Failure handling
 
-If a check fails, diagnose the failure before weakening the check. When a failure reveals a missing reusable defense, follow [incident-to-guardrail](../incident-to-guardrail/SKILL.md) or add/update the relevant Agent Note.
+If a check fails, diagnose the failure before weakening the check. When a failure reveals a reusable gap, add the narrowest regression test, gate, runtime assertion, or defensive rule that would have caught it. Update a `bug-fix` Agent Note when the fix changes a durable decision or contract.
