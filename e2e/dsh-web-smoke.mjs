@@ -75,7 +75,9 @@ try {
   assert.match(await panel.textContent() ?? '', /recent dispatches/i)
 
   await page.getByRole('button', { name: 'Fibers', exact: true }).click()
-  await page.locator('[data-testid="cordis-devtools-fiber-detail"]').waitFor({ state: 'visible', timeout: 10_000 })
+  const fiberDetail = page.locator('[data-testid="cordis-devtools-fiber-detail"]')
+  await fiberDetail.waitFor({ state: 'visible', timeout: 10_000 })
+  assert.match(await fiberDetail.textContent() ?? '', /Effects/)
 
   await page.getByRole('button', { name: 'Close Cordis DevTools' }).click()
   await panel.waitFor({ state: 'detached', timeout: 10_000 })
