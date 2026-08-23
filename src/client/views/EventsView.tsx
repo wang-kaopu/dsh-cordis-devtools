@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ListenerSnapshot } from '../../shared/types.js'
 import css from '../DevtoolsPanel.module.css'
@@ -19,11 +20,21 @@ export function EventsView({
   onSelect,
   onOpenFiber,
 }: EventsViewProps) {
+  const listRef = useRef<HTMLElement>(null)
   const activeEvent = visibleEvents.find(event => event.name === activeEventName) ?? visibleEvents[0]
+
+  useEffect(() => {
+    if (activeEvent === undefined) return
+    const row = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-event-name]') ?? [])]
+      .find(element => element.dataset.eventName === activeEvent.name)
+    if (typeof row?.scrollIntoView === 'function') {
+      row.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+  }, [activeEvent?.name])
 
   return (
     <div className={css.eventsBody}>
-      <nav aria-label="Cordis events" className={css.eventList}>
+      <nav ref={listRef} aria-label="Cordis events" className={css.eventList}>
         {visibleEvents.length === 0 && <div className={css.emptyList}>No matching events.</div>}
         {visibleEvents.map(event => (
           <button

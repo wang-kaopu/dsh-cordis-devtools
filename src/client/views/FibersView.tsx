@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DisclosureRow, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   DispatchRecord,
@@ -25,6 +25,7 @@ export function FibersView({
   onSelect,
   onOpenEvent,
 }: FibersViewProps) {
+  const listRef = useRef<HTMLElement>(null)
   const [expandedEffects, setExpandedEffects] = useState<Set<string>>(() => new Set())
   const activeFiber = visibleFibers.find(fiber => fiber.uid === activeFiberUid) ?? visibleFibers[0]
   const ownedListeners = activeFiber === undefined
@@ -34,6 +35,14 @@ export function FibersView({
   const recentDispatchHits = activeFiber === undefined
     ? 0
     : dispatches.filter(record => record.thisFiber?.uid === activeFiber.uid).length
+
+  useEffect(() => {
+    if (activeFiber === undefined) return
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-fiber-uid="${activeFiber.uid}"]`)
+    if (typeof row?.scrollIntoView === 'function') {
+      row.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+  }, [activeFiber?.uid])
 
   const toggleEffect = (id: string): void => {
     setExpandedEffects((current) => {
@@ -46,7 +55,7 @@ export function FibersView({
 
   return (
     <div className={css.fibersBody}>
-      <nav aria-label="Live Cordis fibers" className={css.fiberList}>
+      <nav ref={listRef} aria-label="Live Cordis fibers" className={css.fiberList}>
         {visibleFibers.length === 0 && <div className={css.emptyList}>No matching live fibers.</div>}
         {visibleFibers.map(fiber => (
           <button
