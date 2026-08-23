@@ -94,16 +94,14 @@ try {
 }
 
 async function dismissFirstRunNotice(page) {
-  const candidates = [
-    page.getByRole('button', { name: /continue/i }).first(),
-    page.getByRole('button', { name: /继续/ }).first(),
-  ]
-  for (const candidate of candidates) {
-    if (await candidate.isVisible({ timeout: 750 }).catch(() => false)) {
-      await candidate.click()
-      return
-    }
-  }
+  const notice = page.getByRole('dialog', { name: /Internal Testing Notice|内测声明/ }).first()
+  const appeared = await notice.waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => true, () => false)
+  if (!appeared) return
+
+  const action = notice.getByRole('button', { name: /^(Continue|继续)$/ })
+  await action.click()
+  await notice.waitFor({ state: 'hidden', timeout: 15_000 })
 }
 
 async function getFreePort() {
