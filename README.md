@@ -8,9 +8,10 @@ Runtime inspector and event profiler for DeepSeek Harness / Cordis.
 
 - Live Event / Listener Registry backed by the real Cordis listener registry.
 - Listener execution order, `prepend` / `global`, and owning fiber metadata.
+- Authoritative live Fiber Registry backed by `ctx.registry`, with parent/inject metadata and readable lifecycle states.
 - Bounded recent Dispatch Timeline with invocation mode and dispatch-context metadata.
-- One Web DevTools surface in the DSH sidebar footer with `Events` and `Timeline` views.
-- Event/fiber search and dispatch-mode filtering.
+- One Web DevTools surface in the DSH sidebar footer with `Events`, `Timeline`, and `Fibers` views.
+- Event/fiber search, lifecycle-state filtering, and dispatch-mode filtering.
 - Loopback-only Host → browser snapshot transport through DSH Connection RPC.
 - DSH-native control chrome through `@deepseek-ai/dsh-client-ui-primitives`.
 
@@ -19,6 +20,7 @@ Runtime inspector and event profiler for DeepSeek Harness / Cordis.
 ```text
 Cordis runtime
   ├─ ctx.events._hooks ───────────────┐
+  ├─ ctx.registry ────────────────────┤
   ├─ internal/dispatch ───────────────┤
   ├─ internal/plugin ─────────────────┤
   └─ internal/status ─────────────────┤
@@ -26,7 +28,7 @@ Cordis runtime
                              ObserverCollector
                               ├─ event registry
                               ├─ listener snapshot
-                              ├─ observed fibers
+                              ├─ live fiber registry
                               └─ bounded dispatch ring buffer
                                       │
                                       ▼
@@ -44,14 +46,15 @@ Cordis runtime
                                            Cordis DevTools Web
                                        sidebar.footer.action
                                          ├─ Events
-                                         └─ Timeline
+                                         ├─ Timeline
+                                         └─ Fibers
 ```
 
 Direct Cordis internal access is isolated behind `src/host/cordis-adapter.ts`. The Web client consumes only the serializable shared snapshot contract and never reaches into Host Cordis internals. See [the architecture document](docs/architecture.md) for the invariants and observer/instrumented-mode boundary.
 
 ## Web Cordis DevTools
 
-The single sidebar surface contains two views.
+The single sidebar surface contains three views.
 
 ### Events
 
@@ -59,7 +62,7 @@ The Events view lists live events and their listener registrations:
 
 - event name and live listener count;
 - listener execution order and runtime-local id;
-- owner fiber name, uid, and state;
+- owner fiber name, uid, and normalized lifecycle state;
 - `prepend` and `global` flags;
 - event-name search.
 
@@ -73,15 +76,25 @@ Each row can expose only facts available from `DispatchRecord`: timestamp, invoc
 
 The Timeline is a **recent bounded view, not a complete or lossless audit log**. The Host ring buffer can overwrite older records between browser polls. Observer mode also does not know generic duration, completion outcome, executed-listener identity, per-listener timing, or waterfall short-circuit attribution.
 
+### Fibers
+
+The Fibers view lists the current live plugin fibers from the Cordis registry. It supports name/uid search and lifecycle-state filters, and shows selected-fiber metadata including parent and declared inject service names.
+
+Owned listener and event counts are derived from the current listener registry by matching owner uid. **Recent dispatch-context hits** are derived only from the current bounded Timeline window; they are not lifetime execution counts and do not imply the selected fiber owned every listener involved in those dispatches.
+
+Raw plugin config, intercept values, effect trees, service graphs, stacks, errors, and mutation controls are intentionally not exposed by this version.
+
 ## DSH UI alignment
 
 Web controls reuse DSH's shared `@deepseek-ai/dsh-client-ui-primitives` when the semantics match: buttons, inputs, pills, tooltips, disclosure rows, outside-dismiss behavior, and icons. DevTools-specific panel/grid/list geometry remains package-owned CSS composed from `--dsw-*` tokens.
+
+The visual rule is to prefer DSH layer backgrounds, spacing, selection state, and shared primitives; separators and high-contrast borders are added only when necessary for comprehension.
 
 `@deepseek-ai/dsh-client-ui-primitives` stays external in `lib/client.js`; DSH Web supplies the platform-module instance through `window.__ModuleLoader__`. The package does not bundle a second copy of the DSH control library.
 
 ## Refresh semantics
 
-Opening the panel refreshes immediately and starts one one-second polling loop. Switching between Events and Timeline does not start another poller. Polling stops when the panel closes, and an in-flight request is aborted. Failed refreshes keep the last successful snapshot visible but mark it stale.
+Opening the panel refreshes immediately and starts one one-second polling loop. Switching between Events, Timeline, and Fibers does not start another poller. Periodic refresh is silent, so the Refresh button does not animate every second. Polling stops when the panel closes, and an in-flight request is aborted. Failed refreshes keep the last successful snapshot visible but mark it stale.
 
 ## Project structure
 
@@ -96,7 +109,7 @@ src/
 │  ├─ rpc.ts              # transport channel constants
 │  └─ types.ts            # serializable snapshot contracts
 ├─ client/
-│  ├─ EventExplorer.tsx   # shared Events / Timeline DevTools shell
+│  ├─ EventExplorer.tsx   # shared Events / Timeline / Fibers DevTools shell
 │  ├─ DevtoolsPanel.module.css
 │  ├─ port.ts             # Connection RPC snapshot adapter
 │  ├─ store.ts            # visible-only refresh state
@@ -118,7 +131,7 @@ src/
 - Event explorer ✓
 - Listener ordering view ✓
 - Dispatch timeline ✓
-- Fiber inspector
+- Fiber inspector ✓
 
 ### v0.3 — Instrumented waterfall mode
 
@@ -167,7 +180,9 @@ The process is intentionally smaller than DeepSeek Harness's full development sy
 
 `internal/dispatch` fires before Cordis resolves and executes the public event listeners. Observer mode therefore records dispatch occurrence and registered-listener metadata, **not** generic dispatch duration, completion outcome, or per-listener duration. Those measurements require explicit instrumentation and are intentionally deferred.
 
-Raw event arguments, prompts, tool results, file contents, and credentials are not collected by the current Web DevTools surface.
+`DevtoolsSnapshot.fibers` is a live registry inventory. Historical `DispatchRecord.thisFiber` references can outlive a fiber that has since been disposed; that difference is intentional.
+
+Raw event arguments, prompts, tool results, plugin config, file contents, and credentials are not collected by the current Web DevTools surface.
 
 ## License
 

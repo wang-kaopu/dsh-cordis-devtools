@@ -1,10 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type { FiberSnapshot, ListenerSnapshot } from '../shared/types.js'
+import type { FiberSnapshot, ListenerSnapshot, LiveFiberSnapshot } from '../shared/types.js'
 
 interface FiberLike {
   uid?: number | null
   name?: string
   state?: unknown
+  parent?: ContextLike
+  inject?: Record<string, unknown>
 }
 
 interface ContextLike {
@@ -53,6 +55,23 @@ export class CordisAdapter {
     return result
   }
 
+  snapshotFibers(): LiveFiberSnapshot[] {
+    const result: LiveFiberSnapshot[] = []
+    for (const runtime of this.ctx.registry.values()) {
+      for (const fiber of runtime.fibers) {
+        if (fiber.uid === null) continue
+        result.push({
+          uid: fiber.uid,
+          name: fiber.name,
+          state: normalizeFiberState(fiber.state),
+          parent: this.snapshotFiber(fiber.parent),
+          inject: Object.keys(fiber.inject),
+        })
+      }
+    }
+    return result.sort((a, b) => a.uid - b.uid)
+  }
+
   countRegisteredListeners(event: string): number {
     const hooks = (this.ctx.events as unknown as EventsLike)._hooks
     return hooks?.[event]?.length ?? 0
@@ -64,7 +83,7 @@ export class CordisAdapter {
     return {
       uid: typeof fiber.uid === 'number' || fiber.uid === null ? fiber.uid : null,
       name: typeof fiber.name === 'string' ? fiber.name : 'unknown',
-      state: String(fiber.state ?? 'unknown'),
+      state: normalizeFiberState(fiber.state),
     }
   }
 
@@ -83,4 +102,9 @@ export class CordisAdapter {
     this.listenerIds.set(hook, id)
     return id
   }
+}
+
+function normalizeFiberState(state: unknown): string {
+  if (typeof state !== 'number') return String(state ?? 'unknown')
+  return ['pending', 'loading', 'active', 'failed', 'disposed', 'unloading'][state] ?? String(state)
 }

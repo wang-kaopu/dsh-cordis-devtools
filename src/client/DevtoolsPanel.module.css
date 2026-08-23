@@ -53,7 +53,9 @@
 .muted,
 .detailMeta,
 .timelineMeta,
-.ownerMeta {
+.ownerMeta,
+.fiberListMeta,
+.fiberStatLabel {
   color: var(--dsw-alias-label-secondary, #68707a);
   font-size: 11px;
 }
@@ -107,20 +109,23 @@
   flex: 1;
 }
 
-.eventsBody {
+.eventsBody,
+.fibersBody {
   display: grid;
   grid-template-columns: minmax(220px, 34%) 1fr;
   height: 100%;
 }
 
-.eventList {
+.eventList,
+.fiberList {
   min-height: 0;
   overflow: auto;
   padding: 8px;
   background: var(--dsw-alias-bg-layer-2, #f7f7f8);
 }
 
-.eventButton {
+.eventButton,
+.fiberButton {
   width: 100%;
   display: flex;
   align-items: center;
@@ -136,16 +141,20 @@
 }
 
 .eventButton:hover,
-.eventButton:focus-visible {
+.eventButton:focus-visible,
+.fiberButton:hover,
+.fiberButton:focus-visible {
   background: var(--dsw-alias-bg-hover, rgb(0 0 0 / 5%));
   outline: none;
 }
 
-.eventButtonActive {
+.eventButtonActive,
+.fiberButtonActive {
   background: var(--dsw-alias-bg-selected, rgb(79 103 255 / 12%));
 }
 
-.eventName {
+.eventName,
+.fiberName {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -157,6 +166,11 @@
 .count {
   color: var(--dsw-alias-label-secondary, #68707a);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fiberListMeta {
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
@@ -177,7 +191,8 @@
   padding: 10px;
 }
 
-.detail {
+.detail,
+.fiberDetail {
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -188,7 +203,8 @@
 .listenerHead,
 .ownerRow,
 .timelineCollapsed,
-.timelineDetailRow {
+.timelineDetailRow,
+.fiberInjectRow {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -213,7 +229,8 @@
 }
 
 .listenerCard,
-.timelineCard {
+.timelineCard,
+.fiberStat {
   border-radius: 9px;
   background: var(--dsw-alias-bg-layer-2, #f7f7f8);
 }
@@ -306,18 +323,86 @@
   overflow-wrap: anywhere;
 }
 
+.fiberStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.fiberStat {
+  display: grid;
+  grid-template-rows: 22px minmax(30px, auto);
+  align-content: start;
+  gap: 4px;
+  padding: 10px;
+}
+
+.fiberStatValue {
+  font-size: 18px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.fiberStatLabel {
+  line-height: 1.35;
+}
+
+.fiberFacts {
+  display: grid;
+  gap: 9px;
+}
+
+.fiberFacts .timelineDetailRow,
+.fiberInjectRow {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.fiberFacts .detailLabel,
+.fiberFacts .detailValue,
+.fiberInjectRow .detailLabel {
+  line-height: 20px;
+}
+
+.fiberInjectRow {
+  flex-wrap: initial;
+}
+
+.injectPills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 20px;
+}
+
+.fiberNotice {
+  display: none;
+}
+
 @media (max-width: 720px) {
   .panel {
     width: calc(100vw - 16px);
     height: min(620px, calc(100vh - 24px));
   }
 
-  .eventsBody {
+  .eventsBody,
+  .fibersBody {
     grid-template-columns: 1fr;
   }
 
-  .eventList {
+  .eventList,
+  .fiberList {
     max-height: 180px;
+  }
+
+  .fiberStats {
+    grid-template-columns: 1fr;
   }
 
   .timelineCollapsed .timelineMeta:nth-of-type(2) {

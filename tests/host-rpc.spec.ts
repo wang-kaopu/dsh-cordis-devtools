@@ -21,7 +21,13 @@ const snapshot: DevtoolsSnapshot = {
     global: false,
     owner: { uid: 3, name: 'test-plugin', state: 'active' },
   }],
-  fibers: [{ uid: 3, name: 'test-plugin', state: 'active' }],
+  fibers: [{
+    uid: 3,
+    name: 'test-plugin',
+    state: 'active',
+    parent: { uid: 0, name: 'root', state: 'active' },
+    inject: [],
+  }],
   dispatches: [],
 }
 
