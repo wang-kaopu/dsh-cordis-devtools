@@ -28,7 +28,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "pnpm typecheck && pnpm test"
+    "check": "pnpm typecheck && pnpm test",
+    "verify:notes": "node scripts/verify-agent-notes.mjs",
+    "verify:note-required": "node scripts/verify-note-required.mjs",
+    "verify:links": "node scripts/verify-links.mjs",
+    "verify:policy": "pnpm verify:notes && pnpm verify:links && pnpm verify:note-required"
   },
   "dsh": {
     "bundle": {

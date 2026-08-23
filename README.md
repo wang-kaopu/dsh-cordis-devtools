@@ -36,7 +36,7 @@ Cordis runtime
                    future Web UI             future exporters
 ```
 
-The internal Cordis access is isolated behind `src/host/cordis-adapter.ts`. If Cordis changes its diagnostic internals, the rest of the project should not need to change.
+The internal Cordis access is isolated behind `src/host/cordis-adapter.ts`. If Cordis changes its diagnostic internals, the rest of the project should not need to change. See [the architecture document](docs/architecture.md) for the invariants and the observer/instrumented-mode boundary.
 
 ## Project structure
 
@@ -81,6 +81,7 @@ src/
 
 ```bash
 pnpm install
+pnpm verify:policy
 pnpm typecheck
 pnpm test
 pnpm build
@@ -93,6 +94,12 @@ dsh plugin --profile web add ./
 ```
 
 The package declares a DSH bundle and inserts the host plugin through `cordis.patch.yml`.
+
+## Agent-native workflow
+
+This repository treats cold-start coding agents as first-class contributors. Short standing orders live in [AGENTS.md](AGENTS.md); durable decisions and rejected alternatives live in [Agent Notes](.agents/notes/README.md); executable policy gates validate note structure, same-PR decision evidence for non-trivial changes, and repository-local links.
+
+The process is intentionally smaller than DeepSeek Harness's full development system. New gates are added when this repository develops behavior or failure modes they can actually protect. Regressions should leave behind the narrowest useful defense, but the current repository does not require a formal postmortem process.
 
 ## Important semantics
 
