@@ -1,6 +1,6 @@
 # Pre-push Checks
 
-Use this workflow before pushing a change. The goal is evidence, not ritual: run the smallest set that can falsify the changed behavior.
+This is the verification subroutine used by [development-loop](../development-loop/SKILL.md). The goal is evidence, not ritual: run the smallest set that can falsify the changed behavior.
 
 ## 1. Inspect the change surface
 

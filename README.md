@@ -97,7 +97,7 @@ The package declares a DSH bundle and inserts the host plugin through `cordis.pa
 
 ## Agent-native workflow
 
-This repository treats cold-start coding agents as first-class contributors. Short standing orders live in [AGENTS.md](AGENTS.md); durable decisions and rejected alternatives live in [Agent Notes](.agents/notes/README.md); executable policy gates validate note structure, same-PR decision evidence for non-trivial changes, and repository-local links.
+This repository treats cold-start coding agents as first-class contributors. Short standing orders live in [AGENTS.md](AGENTS.md); durable decisions and rejected alternatives live in [Agent Notes](.agents/notes/README.md); and [development-loop](.agents/skills/development-loop/SKILL.md) defines the default maintainer-agent development SOP. The responsibility split and checkpoints are explained in [the development workflow](docs/development-workflow.md).
 
 The process is intentionally smaller than DeepSeek Harness's full development system. New gates are added when this repository develops behavior or failure modes they can actually protect. Regressions should leave behind the narrowest useful defense, but the current repository does not require a formal postmortem process.
 

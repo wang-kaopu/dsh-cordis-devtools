@@ -14,6 +14,12 @@ pnpm verify:policy
 
 Run the smallest check set that proves the changed behavior. Do not rerun a passing check unless later edits can invalidate it.
 
+## Development workflow
+
+Use [development-loop](.agents/skills/development-loop/SKILL.md) for development tasks. It classifies work as trivial, non-trivial, or decision-sensitive and defines discovery, Agent Note, implementation, verification, self-review, PR, and lifecycle steps. The human/agent responsibility split is explained in [docs/development-workflow.md](docs/development-workflow.md).
+
+For decision-sensitive changes—architecture, public/shared contracts, Cordis dispatch semantics, lifecycle ownership, payload/privacy behavior, instrumentation semantics, persistent formats, or repository policy—stop after the proposal and wait for maintainer approval unless the maintainer already explicitly approved that exact direction in the current task.
+
 ## Standing orders
 
 - **Observer mode must not change Cordis dispatch semantics.** v0.1 observes runtime state; listener wrapping, `next()` instrumentation, or dispatch replacement belongs to an explicit instrumented mode and requires an Agent Note.
@@ -53,6 +59,7 @@ Read [docs/defensive-patterns.md](docs/defensive-patterns.md) before changing li
 
 Reusable procedures live under `.agents/skills/`:
 
-- [pre-push checks](.agents/skills/pre-push-checks/SKILL.md) — select checks from the changed surface and evidence needed.
+- [development loop](.agents/skills/development-loop/SKILL.md) — orchestrate discovery → decision → implementation → verification → PR.
+- [pre-push checks](.agents/skills/pre-push-checks/SKILL.md) — select checks from the changed surface and evidence needed during the verification phase.
 
 All repository-local Markdown links are relative so `pnpm verify:links` can validate them. `CLAUDE.md` is a symlink to this file; keep one source of standing orders.
