@@ -145,6 +145,7 @@ describe('Fiber Registry', () => {
         state: 'active',
         parent: { uid: 0, name: 'root', state: 'active' },
         inject: [],
+        effects: [],
       },
       {
         uid: secondFiber.uid,
@@ -152,6 +153,28 @@ describe('Fiber Registry', () => {
         state: 'active',
         parent: { uid: 0, name: 'root', state: 'active' },
         inject: [],
+        effects: [],
+      },
+    ])
+  })
+
+  it('projects labeled live effects as a recursive metadata tree', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin({
+      name: 'effects-plugin',
+      apply(pluginCtx: Context) {
+        pluginCtx.effect(
+          () => pluginCtx.effect(() => () => {}, 'child-effect'),
+          'parent-effect',
+        )
+      },
+    })
+    const collector = new ObserverCollector(ctx)
+
+    expect(collector.snapshot().fibers.find(candidate => candidate.uid === fiber.uid)?.effects).toEqual([
+      {
+        label: 'parent-effect',
+        children: [{ label: 'child-effect', children: [] }],
       },
     ])
   })
@@ -171,6 +194,7 @@ describe('Fiber Registry', () => {
       state: 'pending',
       parent: { uid: 0, name: 'root', state: 'active' },
       inject: ['missing-service'],
+      effects: [],
     })
   })
 

@@ -41,10 +41,10 @@ const snapshot: DevtoolsSnapshot = {
     },
   ],
   fibers: [
-    { uid: 4, name: 'plugin-alpha', state: 'active', parent: rootFiber, inject: ['logger'] },
-    { uid: 5, name: 'plugin-second', state: 'active', parent: rootFiber, inject: [] },
-    { uid: 8, name: 'plugin-beta', state: 'active', parent: rootFiber, inject: ['connection'] },
-    { uid: 9, name: 'plugin-waiting', state: 'pending', parent: rootFiber, inject: ['database'] },
+    { uid: 4, name: 'plugin-alpha', state: 'active', parent: rootFiber, inject: ['logger'], effects: [] },
+    { uid: 5, name: 'plugin-second', state: 'active', parent: rootFiber, inject: [], effects: [] },
+    { uid: 8, name: 'plugin-beta', state: 'active', parent: rootFiber, inject: ['connection'], effects: [] },
+    { uid: 9, name: 'plugin-waiting', state: 'pending', parent: rootFiber, inject: ['database'], effects: [] },
   ],
   dispatches: [
     {

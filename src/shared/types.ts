@@ -6,10 +6,16 @@ export interface FiberSnapshot {
   state: string
 }
 
+export interface EffectSnapshot {
+  label: string
+  children: EffectSnapshot[]
+}
+
 export interface LiveFiberSnapshot extends FiberSnapshot {
   uid: number
   parent: FiberSnapshot | null
   inject: string[]
+  effects: EffectSnapshot[]
 }
 
 export interface ListenerSnapshot {
