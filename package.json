@@ -1,6 +1,6 @@
 {
   "name": "dsh-cordis-devtools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Runtime inspector and event profiler for DeepSeek Harness / Cordis.",
   "type": "module",
   "main": "lib/index.js",
