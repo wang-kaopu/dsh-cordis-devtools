@@ -46,19 +46,21 @@ export class EventExplorerStore {
 
     void this.refresh()
     this.pollTimer = setInterval(() => {
-      void this.refresh()
+      void this.refresh({ background: true })
     }, this.pollIntervalMs)
   }
 
-  async refresh(): Promise<void> {
+  async refresh({ background = false }: { background?: boolean } = {}): Promise<void> {
     if (this.disposed || this.inFlight !== undefined) return
 
     const controller = new AbortController()
     this.inFlight = controller
-    this.publish({
-      ...this.state,
-      loading: true,
-    })
+    if (!background) {
+      this.publish({
+        ...this.state,
+        loading: true,
+      })
+    }
 
     try {
       const snapshot = await this.port.fetchSnapshot(controller.signal)
