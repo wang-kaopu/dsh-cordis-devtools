@@ -8,7 +8,8 @@ Runtime inspector and event profiler for DeepSeek Harness / Cordis.
 
 - Live Event / Listener Registry backed by the real Cordis listener registry.
 - Listener execution order, `prepend` / `global`, and owning fiber metadata.
-- Authoritative live Fiber Registry backed by `ctx.registry`, with parent/inject metadata and readable lifecycle states.
+- Authoritative live Fiber Registry backed by `ctx.registry`, with parent/inject metadata, readable lifecycle states, and labeled effect trees from `fiber.getEffects()`.
+- Cross-view navigation between listener owners, dispatch contexts, Fibers, and owned Events.
 - Bounded recent Dispatch Timeline with invocation mode and dispatch-context metadata.
 - One Web DevTools surface in the DSH sidebar footer with `Events`, `Timeline`, and `Fibers` views.
 - Event/fiber search, lifecycle-state filtering, and dispatch-mode filtering.
@@ -21,6 +22,7 @@ Runtime inspector and event profiler for DeepSeek Harness / Cordis.
 Cordis runtime
   ├─ ctx.events._hooks ───────────────┐
   ├─ ctx.registry ────────────────────┤
+  ├─ fiber.getEffects() ──────────────┤
   ├─ internal/dispatch ───────────────┤
   ├─ internal/plugin ─────────────────┤
   └─ internal/status ─────────────────┤
@@ -28,7 +30,7 @@ Cordis runtime
                              ObserverCollector
                               ├─ event registry
                               ├─ listener snapshot
-                              ├─ live fiber registry
+                              ├─ live fiber/effect registry
                               └─ bounded dispatch ring buffer
                                       │
                                       ▼
@@ -66,23 +68,27 @@ The Events view lists live events and their listener registrations:
 - `prepend` and `global` flags;
 - event-name search.
 
+A listener owner can open the corresponding live Fiber directly. If the owner reference no longer resolves to current live inventory, it remains readable metadata rather than being promoted into a synthetic live Fiber.
+
 It intentionally does **not** infer a static event dispatch mode. `emit`, `parallel`, `serial`, `bail`, and `waterfall` are invocation-level facts and belong to concrete dispatch records.
 
 ### Timeline
 
 The Timeline view renders the current bounded Host dispatch window newest-first. It supports event / dispatch-context fiber search and filters for modes actually present in the snapshot.
 
-Each row can expose only facts available from `DispatchRecord`: timestamp, invocation mode, event name, registered-listener count, runtime-local dispatch id, argument count, and known dispatch-context fiber metadata.
+Each row can expose only facts available from `DispatchRecord`: timestamp, invocation mode, event name, registered-listener count, runtime-local dispatch id, argument count, and known dispatch-context fiber metadata. A dispatch context can open its Fiber only when that uid still exists in the authoritative live registry.
 
 The Timeline is a **recent bounded view, not a complete or lossless audit log**. The Host ring buffer can overwrite older records between browser polls. Observer mode also does not know generic duration, completion outcome, executed-listener identity, per-listener timing, or waterfall short-circuit attribution.
 
 ### Fibers
 
-The Fibers view lists the current live plugin fibers from the Cordis registry. It supports name/uid search and lifecycle-state filters, and shows selected-fiber metadata including parent and declared inject service names.
+The Fibers view lists the current live plugin fibers from the Cordis registry. It supports name/uid search and lifecycle-state filters, and shows selected-fiber metadata including parent, declared inject service names, owned live events, and labeled live effects.
 
-Owned listener and event counts are derived from the current listener registry by matching owner uid. **Recent dispatch-context hits** are derived only from the current bounded Timeline window; they are not lifetime execution counts and do not imply the selected fiber owned every listener involved in those dispatches.
+Effects come directly from Cordis `fiber.getEffects()` and preserve only human-readable labels plus nested child structure. Nodes with children use DSH disclosure rows for on-demand expansion. Empty/unlabeled effect metadata stays absent rather than being reconstructed from listener or service registries.
 
-Raw plugin config, intercept values, effect trees, service graphs, stacks, errors, and mutation controls are intentionally not exposed by this version.
+Owned listener and event counts are derived from the current listener registry by matching owner uid. Owned event names can navigate back to the Events view. **Recent dispatch-context hits** are derived only from the current bounded Timeline window; they are not lifetime execution counts and do not imply the selected fiber owned every listener involved in those dispatches.
+
+Raw plugin config, intercept values, raw effect disposer/function references, service graphs, stacks, errors, and mutation controls are intentionally not exposed by this version.
 
 ## DSH UI alignment
 
@@ -109,7 +115,12 @@ src/
 │  ├─ rpc.ts              # transport channel constants
 │  └─ types.ts            # serializable snapshot contracts
 ├─ client/
-│  ├─ EventExplorer.tsx   # shared Events / Timeline / Fibers DevTools shell
+│  ├─ DevtoolsShell.tsx   # shared panel/navigation/filter state
+│  ├─ EventExplorer.tsx   # compatibility re-export
+│  ├─ views/
+│  │  ├─ EventsView.tsx
+│  │  ├─ TimelineView.tsx
+│  │  └─ FibersView.tsx
 │  ├─ DevtoolsPanel.module.css
 │  ├─ port.ts             # Connection RPC snapshot adapter
 │  ├─ store.ts            # visible-only refresh state
@@ -132,6 +143,9 @@ src/
 - Listener ordering view ✓
 - Dispatch timeline ✓
 - Fiber inspector ✓
+- Cross-view navigation ✓
+- Fiber Effects inspector ✓
+- Real DSH Web smoke ✓
 
 ### v0.3 — Instrumented waterfall mode
 
@@ -180,9 +194,9 @@ The process is intentionally smaller than DeepSeek Harness's full development sy
 
 `internal/dispatch` fires before Cordis resolves and executes the public event listeners. Observer mode therefore records dispatch occurrence and registered-listener metadata, **not** generic dispatch duration, completion outcome, or per-listener duration. Those measurements require explicit instrumentation and are intentionally deferred.
 
-`DevtoolsSnapshot.fibers` is a live registry inventory. Historical `DispatchRecord.thisFiber` references can outlive a fiber that has since been disposed; that difference is intentional.
+`DevtoolsSnapshot.fibers` is a live registry inventory. Its `effects` field is also live metadata and is not copied into historical dispatch records. Historical `DispatchRecord.thisFiber` references can outlive a fiber that has since been disposed; that difference is intentional.
 
-Raw event arguments, prompts, tool results, plugin config, file contents, and credentials are not collected by the current Web DevTools surface.
+Raw event arguments, prompts, tool results, plugin config, file contents, credentials, and raw effect functions/disposers are not collected by the current Web DevTools surface.
 
 ## License
 
