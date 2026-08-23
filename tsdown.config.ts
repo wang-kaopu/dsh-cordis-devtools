@@ -13,6 +13,7 @@ export default defineConfig([
     format: ['esm'],
     platform: 'node',
     target: 'es2022',
+    fixedExtension: false,
     dts: true,
     clean: true,
     external: ['@deepseek-ai/cordis'],

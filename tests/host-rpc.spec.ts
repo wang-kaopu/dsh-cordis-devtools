@@ -51,14 +51,22 @@ describe('Cordis DevTools RPC', () => {
 
   it('registers a loopback-only lifecycle-owned channel through Connection', () => {
     const dispose = vi.fn(async () => {})
-    const handle = vi.fn(() => dispose)
-    const connection: HostConnectionLike = { rpc: { handle } }
+    let capturedChannel: string | undefined
+    let capturedOptions: { authority: 'loopback' | 'trusted-host' } | undefined
+    const connection: HostConnectionLike = {
+      rpc: {
+        handle(channel, _handler, options) {
+          capturedChannel = channel
+          capturedOptions = options
+          return dispose
+        },
+      },
+    }
 
     const returned = registerDevtoolsRpc(connection, service)
 
     expect(returned).toBe(dispose)
-    expect(handle).toHaveBeenCalledTimes(1)
-    expect(handle.mock.calls[0]?.[0]).toBe(DEVTOOLS_RPC_CHANNEL)
-    expect(handle.mock.calls[0]?.[2]).toEqual({ authority: 'loopback' })
+    expect(capturedChannel).toBe(DEVTOOLS_RPC_CHANNEL)
+    expect(capturedOptions).toEqual({ authority: 'loopback' })
   })
 })
