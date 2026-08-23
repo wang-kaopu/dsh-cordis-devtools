@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { DisclosureRow, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DispatchRecord } from '../../shared/types.js'
 import css from '../DevtoolsPanel.module.css'
@@ -5,10 +6,18 @@ import css from '../DevtoolsPanel.module.css'
 export interface TimelineViewProps {
   dispatches: DispatchRecord[]
   expanded: ReadonlySet<number>
+  liveFiberUids: ReadonlySet<number>
   onToggle(id: number): void
+  onOpenFiber(uid: number): void
 }
 
-export function TimelineView({ dispatches, expanded, onToggle }: TimelineViewProps) {
+export function TimelineView({
+  dispatches,
+  expanded,
+  liveFiberUids,
+  onToggle,
+  onOpenFiber,
+}: TimelineViewProps) {
   return (
     <main className={css.timeline} aria-label="Recent Cordis dispatches">
       <div className={css.timelineNotice}>
@@ -18,45 +27,58 @@ export function TimelineView({ dispatches, expanded, onToggle }: TimelineViewPro
         <div className={css.empty}>No matching dispatches.</div>
       ) : (
         <div className={css.timelineList}>
-          {dispatches.map(record => (
-            <div key={record.id} data-dispatch-id={record.id} className={css.timelineCard}>
-              <DisclosureRow
-                icon={<span className={css.dispatchDot} aria-hidden />}
-                title={record.event}
-                open={expanded.has(record.id)}
-                expandable
-                expandOnRowClick
-                onToggle={() => { onToggle(record.id) }}
-                collapsedContent={(
-                  <span className={css.timelineCollapsed}>
-                    <Pill>{record.mode}</Pill>
-                    <span className={css.timelineMeta}>{formatTime(record.timestamp)}</span>
-                    <span className={css.timelineMeta}>{record.registeredListeners} registered</span>
-                  </span>
-                )}
-              >
-                <div className={css.timelineDetail}>
-                  <Detail label="dispatch id" value={String(record.id)} />
-                  <Detail label="mode" value={String(record.mode)} />
-                  <Detail label="arguments" value={String(record.argCount)} />
-                  <Detail label="registered listeners" value={String(record.registeredListeners)} />
-                  <Detail
-                    label="dispatch context"
-                    value={record.thisFiber === null
-                      ? 'unknown'
-                      : `${record.thisFiber.name} · uid ${record.thisFiber.uid ?? 'disposed'} · ${record.thisFiber.state}`}
-                  />
-                </div>
-              </DisclosureRow>
-            </div>
-          ))}
+          {dispatches.map((record) => {
+            const context = record.thisFiber
+            const contextIsLive = context?.uid !== null
+              && context?.uid !== undefined
+              && liveFiberUids.has(context.uid)
+            return (
+              <div key={record.id} data-dispatch-id={record.id} className={css.timelineCard}>
+                <DisclosureRow
+                  icon={<span className={css.dispatchDot} aria-hidden />}
+                  title={record.event}
+                  open={expanded.has(record.id)}
+                  expandable
+                  expandOnRowClick
+                  onToggle={() => { onToggle(record.id) }}
+                  collapsedContent={(
+                    <span className={css.timelineCollapsed}>
+                      <Pill>{record.mode}</Pill>
+                      <span className={css.timelineMeta}>{formatTime(record.timestamp)}</span>
+                      <span className={css.timelineMeta}>{record.registeredListeners} registered</span>
+                    </span>
+                  )}
+                >
+                  <div className={css.timelineDetail}>
+                    <Detail label="dispatch id" value={String(record.id)} />
+                    <Detail label="mode" value={String(record.mode)} />
+                    <Detail label="arguments" value={String(record.argCount)} />
+                    <Detail label="registered listeners" value={String(record.registeredListeners)} />
+                    <Detail
+                      label="dispatch context"
+                      value={context === null
+                        ? 'unknown'
+                        : contextIsLive && context.uid !== null
+                          ? (
+                              <span className={css.injectPills}>
+                                <Pill onClick={() => { onOpenFiber(context.uid as number) }}>{context.name}</Pill>
+                                <span>uid {context.uid} · {context.state}</span>
+                              </span>
+                            )
+                          : `${context.name} · uid ${context.uid ?? 'disposed'} · ${context.state} · not live`}
+                    />
+                  </div>
+                </DisclosureRow>
+              </div>
+            )
+          })}
         </div>
       )}
     </main>
   )
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className={css.timelineDetailRow}>
       <span className={css.detailLabel}>{label}</span>
