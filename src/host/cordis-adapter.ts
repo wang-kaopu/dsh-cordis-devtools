@@ -1,5 +1,10 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type { FiberSnapshot, ListenerSnapshot, LiveFiberSnapshot } from '../shared/types.js'
+import type {
+  EffectSnapshot,
+  FiberSnapshot,
+  ListenerSnapshot,
+  LiveFiberSnapshot,
+} from '../shared/types.js'
 
 interface FiberLike {
   uid?: number | null
@@ -22,6 +27,11 @@ interface HookLike {
 
 interface EventsLike {
   _hooks?: Record<PropertyKey, HookLike[]>
+}
+
+interface EffectMetaLike {
+  label: string
+  children: EffectMetaLike[]
 }
 
 /**
@@ -66,6 +76,7 @@ export class CordisAdapter {
           state: normalizeFiberState(fiber.state),
           parent: this.snapshotFiber(fiber.parent),
           inject: Object.keys(fiber.inject),
+          effects: fiber.getEffects().map(snapshotEffect),
         })
       }
     }
@@ -101,6 +112,13 @@ export class CordisAdapter {
     const id = this.nextListenerId++
     this.listenerIds.set(hook, id)
     return id
+  }
+}
+
+function snapshotEffect(effect: EffectMetaLike): EffectSnapshot {
+  return {
+    label: effect.label,
+    children: effect.children.map(snapshotEffect),
   }
 }
 
