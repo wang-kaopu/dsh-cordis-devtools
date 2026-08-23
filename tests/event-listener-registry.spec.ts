@@ -163,10 +163,10 @@ describe('Fiber Registry', () => {
     const fiber = await ctx.plugin({
       name: 'effects-plugin',
       apply(pluginCtx: Context) {
-        pluginCtx.effect(() => {
-          pluginCtx.effect(() => () => {}, 'child-effect')
-          return () => {}
-        }, 'parent-effect')
+        pluginCtx.effect(
+          () => pluginCtx.effect(() => () => {}, 'child-effect'),
+          'parent-effect',
+        )
       },
     })
     const collector = new ObserverCollector(ctx)
