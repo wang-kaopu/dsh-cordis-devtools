@@ -114,6 +114,25 @@ afterEach(async () => {
 describe('EventExplorerAction', () => {
   it('keeps one snapshot poller while navigating Events, Timeline, and Fibers by live relationships', async () => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const scrollCalls: HTMLElement[] = []
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value(this: HTMLElement) {
+        scrollCalls.push(this)
+      },
+    })
+    mounted.push(() => {
+      if (originalScrollIntoView === undefined) {
+        delete (HTMLElement.prototype as { scrollIntoView?: typeof HTMLElement.prototype.scrollIntoView }).scrollIntoView
+      } else {
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+          configurable: true,
+          value: originalScrollIntoView,
+        })
+      }
+    })
+
     let shouldFail = false
     let fetchCalls = 0
     const store = new EventExplorerStore({
@@ -145,6 +164,10 @@ describe('EventExplorerAction', () => {
     })
 
     expect(fetchCalls).toBe(1)
+    const refresh = container.querySelector<HTMLButtonElement>('[data-testid="cordis-devtools-refresh"]')
+    expect(refresh?.getAttribute('aria-label')).toBe('Refresh runtime snapshot')
+    expect(refresh?.textContent).toBe('')
+
     const panel = container.querySelector<HTMLElement>('[data-testid="cordis-devtools-panel"]')
     expect(panel?.textContent).toContain('alpha/event')
     expect(panel?.textContent).toContain('plugin-alpha')
@@ -152,17 +175,22 @@ describe('EventExplorerAction', () => {
     expect(panel?.textContent).toContain('global')
     expect(panel?.textContent).not.toContain('waterfall')
 
+    scrollCalls.length = 0
     const ownerLink = findButton(container, 'plugin-alpha')
     expect(ownerLink).not.toBeUndefined()
     await act(async () => { ownerLink?.click() })
+    expect(scrollCalls.at(-1)?.dataset.fiberUid).toBe('4')
+
     let fiberDetail = container.querySelector<HTMLElement>('[data-testid="cordis-devtools-fiber-detail"]')
     expect(fiberDetail?.textContent).toContain('plugin-alpha')
     expect(container.querySelector<HTMLInputElement>('[data-testid="cordis-devtools-search"]')?.getAttribute('aria-label'))
       .toBe('Search live Cordis fibers')
 
+    scrollCalls.length = 0
     const ownedAlphaEvent = findButton(fiberDetail ?? container, 'alpha/event')
     expect(ownedAlphaEvent).not.toBeUndefined()
     await act(async () => { ownedAlphaEvent?.click() })
+    expect(scrollCalls.at(-1)?.dataset.eventName).toBe('alpha/event')
     expect(container.querySelector<HTMLInputElement>('[data-testid="cordis-devtools-search"]')?.getAttribute('aria-label'))
       .toBe('Search Cordis events')
     expect(container.querySelector('[data-event-name="alpha/event"]')).not.toBeNull()
@@ -201,9 +229,11 @@ describe('EventExplorerAction', () => {
     expect(row2?.textContent).toContain('arguments')
     expect(row2?.textContent).toContain('plugin-beta')
 
+    scrollCalls.length = 0
     const dispatchFiberLink = findButton(row2 ?? container, 'plugin-beta')
     expect(dispatchFiberLink).not.toBeUndefined()
     await act(async () => { dispatchFiberLink?.click() })
+    expect(scrollCalls.at(-1)?.dataset.fiberUid).toBe('8')
     fiberDetail = container.querySelector<HTMLElement>('[data-testid="cordis-devtools-fiber-detail"]')
     expect(fiberDetail?.textContent).toContain('plugin-beta')
     expect(fetchCalls).toBe(1)
@@ -272,7 +302,6 @@ describe('EventExplorerAction', () => {
     expect(fiberDetail?.textContent).toContain('plugin-beta')
 
     shouldFail = true
-    const refresh = container.querySelector<HTMLButtonElement>('[data-testid="cordis-devtools-refresh"]')
     await act(async () => {
       refresh?.click()
       await Promise.resolve()
