@@ -1,5 +1,11 @@
-import { Pill } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DispatchRecord, ListenerSnapshot, LiveFiberSnapshot } from '../../shared/types.js'
+import { useState } from 'react'
+import { DisclosureRow, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {
+  DispatchRecord,
+  EffectSnapshot,
+  ListenerSnapshot,
+  LiveFiberSnapshot,
+} from '../../shared/types.js'
 import css from '../DevtoolsPanel.module.css'
 
 export interface FibersViewProps {
@@ -19,6 +25,7 @@ export function FibersView({
   onSelect,
   onOpenEvent,
 }: FibersViewProps) {
+  const [expandedEffects, setExpandedEffects] = useState<Set<string>>(() => new Set())
   const activeFiber = visibleFibers.find(fiber => fiber.uid === activeFiberUid) ?? visibleFibers[0]
   const ownedListeners = activeFiber === undefined
     ? []
@@ -27,6 +34,15 @@ export function FibersView({
   const recentDispatchHits = activeFiber === undefined
     ? 0
     : dispatches.filter(record => record.thisFiber?.uid === activeFiber.uid).length
+
+  const toggleEffect = (id: string): void => {
+    setExpandedEffects((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   return (
     <div className={css.fibersBody}>
@@ -94,6 +110,13 @@ export function FibersView({
                 )}
               </div>
             </div>
+
+            <EffectsSection
+              fiberUid={activeFiber.uid}
+              effects={activeFiber.effects}
+              expanded={expandedEffects}
+              onToggle={toggleEffect}
+            />
           </>
         )}
       </main>
@@ -115,6 +138,82 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div className={css.timelineDetailRow}>
       <span className={css.detailLabel}>{label}</span>
       <span className={css.detailValue}>{value}</span>
+    </div>
+  )
+}
+
+interface EffectsSectionProps {
+  fiberUid: number
+  effects: EffectSnapshot[]
+  expanded: ReadonlySet<string>
+  onToggle(id: string): void
+}
+
+function EffectsSection({ fiberUid, effects, expanded, onToggle }: EffectsSectionProps) {
+  return (
+    <section className={css.effectsSection} data-testid="cordis-devtools-effects">
+      <div className={css.effectsHeader}>
+        <strong className={css.effectsTitle}>Effects</strong>
+        <span className={css.effectsMeta}>
+          {effects.length} root{effects.length === 1 ? '' : 's'}
+        </span>
+      </div>
+      {effects.length === 0 ? (
+        <div className={css.effectsEmpty}>No labeled live effects.</div>
+      ) : (
+        <EffectTree
+          fiberUid={fiberUid}
+          effects={effects}
+          path=""
+          expanded={expanded}
+          onToggle={onToggle}
+        />
+      )}
+    </section>
+  )
+}
+
+interface EffectTreeProps extends EffectsSectionProps {
+  path: string
+}
+
+function EffectTree({ fiberUid, effects, path, expanded, onToggle }: EffectTreeProps) {
+  return (
+    <div className={css.effectTree}>
+      {effects.map((effect, index) => {
+        const effectPath = path === '' ? String(index) : `${path}.${index}`
+        const id = `${fiberUid}:${effectPath}`
+        const expandable = effect.children.length > 0
+        const open = expandable && expanded.has(id)
+
+        return (
+          <div key={id} className={css.effectNode} data-effect-path={effectPath}>
+            <DisclosureRow
+              icon={<span className={css.effectDot} aria-hidden />}
+              title={effect.label}
+              open={open}
+              expandable={expandable}
+              expandOnRowClick={expandable}
+              onToggle={() => { if (expandable) onToggle(id) }}
+              collapsedContent={expandable
+                ? <span className={css.effectMeta}>{effect.children.length} child{effect.children.length === 1 ? '' : 'ren'}</span>
+                : undefined}
+            >
+              {expandable && (
+                <div className={css.effectChildren}>
+                  <EffectTree
+                    fiberUid={fiberUid}
+                    effects={effect.children}
+                    path={effectPath}
+                    expanded={expanded}
+                    onToggle={onToggle}
+                  />
+                </div>
+              )}
+            </DisclosureRow>
+          </div>
+        )
+      })}
     </div>
   )
 }
