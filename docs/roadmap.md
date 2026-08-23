@@ -4,7 +4,7 @@ This document turns the milestone bullets in the README into implementation-size
 
 ## Product direction
 
-`dsh-cordis-devtools` should evolve in two clearly separated stages:
+`dsh-cordis-devtools` evolves in two clearly separated stages:
 
 ```text
 v0.2 — observer Web DevTools
@@ -20,134 +20,32 @@ v0.3 — instrumented waterfall profiler
 
 The split is architectural, not cosmetic. `internal/dispatch` fires before public listeners execute, so observer mode cannot truthfully produce generic completion, per-listener latency, `next()` attribution, or short-circuit facts.
 
-## Current baseline
-
-Already shipped on `main`:
-
-- live Event / Listener Registry;
-- listener ordering, `prepend` / `global`, and owner-fiber metadata;
-- bounded recent Dispatch Timeline;
-- authoritative live Fiber Registry from `ctx.registry`;
-- readable fiber lifecycle state, parent, and inject metadata;
-- DSH Web surface with `Events`, `Timeline`, and `Fibers`;
-- DSH UI primitive reuse and sidebar-footer alignment;
-- one loopback-only Host → browser snapshot RPC;
-- one visible-only browser poller with stale-state behavior;
-- real Cordis integration tests, jsdom/React tests, and built-client module-loader smoke verification.
-
-## v0.2 — Observer Web DevTools
+## v0.2 — Observer Web DevTools ✅ complete
 
 ### Goal
 
-Finish a coherent read-only diagnostic workflow before crossing into instrumentation. A maintainer should be able to move from an event or dispatch to the responsible fiber and inspect the lifecycle effects that Cordis already exposes.
+Provide a coherent read-only diagnostic workflow before crossing into instrumentation. A maintainer can move from an event or dispatch to the responsible Fiber and inspect lifecycle effects that Cordis already exposes.
 
-### Remaining work
+### Delivered work
 
-#### O1 — Split the Web views into stable files
+- **O1 — Client view split** ✓ — `DevtoolsShell.tsx` owns shared panel/poll/filter/navigation state while Events, Timeline, and Fibers live in stable view files.
+- **O2 — Cross-view navigation** ✓ — live listener owners and dispatch contexts can open Fibers; owned live events can navigate back to Events; historical disposed references remain non-live metadata.
+- **O3 — Fiber Effects Inspector** ✓ — live `fiber.getEffects()` metadata is projected as `label + children` only and rendered recursively with DSH disclosure primitives.
+- **O4 — Minimal real DSH Web E2E** ✓ — CI installs the current checkout through the published DSH CLI into a disposable profile, boots DSH Web, completes supported onboarding, and verifies the real sidebar DevTools composition in Chromium.
+- **O5 — v0.2 release hardening** ✓ — package metadata is `0.2.0`; dedicated regression tests protect bounded dispatch retention, metadata-first argument handling, and the no-target-listener-wrapper observer invariant; full repository and real Web gates remain required.
 
-Pure behavior-preserving refactor of the current large `EventExplorer.tsx`.
+### v0.2 invariants
 
-Target shape:
+- observer mode never wraps or replaces target listeners;
+- live listener/Fiber/effect data comes from Cordis runtime state rather than browser reconstruction;
+- dispatch history is bounded and explicitly presented as a recent window rather than a lossless audit log;
+- raw dispatch arguments, prompts, tool results, plugin config, file contents, credentials, and raw effect functions/disposers are not collected by default;
+- historical dispatch Fiber references never get promoted into authoritative live Fiber state;
+- Host-to-browser diagnostics stay loopback-only;
+- one browser snapshot store/poller remains the source for all three views;
+- every displayed fact is either authoritative live state or explicitly bounded/derived state.
 
-```text
-src/client/
-├─ DevtoolsShell.tsx
-├─ views/
-│  ├─ EventsView.tsx
-│  ├─ TimelineView.tsx
-│  └─ FibersView.tsx
-└─ ...
-```
-
-Purpose:
-
-- reduce merge conflicts between parallel UI tasks;
-- keep shared panel/open/poll/filter/navigation state in one shell;
-- keep view-specific layout and tests local;
-- do not introduce a routing library or new client state source.
-
-Acceptance:
-
-- no visible behavior change;
-- existing component tests continue to pass;
-- one sidebar contribution, one snapshot store, one poller remain true.
-
-#### O2 — Cross-view navigation
-
-Connect the existing diagnostic facts instead of leaving three isolated views.
-
-Required paths:
-
-- Events listener owner → selected Fiber;
-- Timeline dispatch context → selected Fiber;
-- Fiber owned event/listener summary → corresponding Events context where the target still exists in the live registry.
-
-Rules:
-
-- navigation is presentation state only;
-- historical dispatch fiber references may point to a disposed fiber, so the UI must degrade to an unavailable/live-missing state instead of fabricating a live Fiber entry;
-- no new Host API is required for navigation itself.
-
-#### O3 — Fiber Effects Inspector
-
-Use Cordis' diagnostic `fiber.getEffects()` API. Cordis describes it as one `EffectMeta` tree per labeled live effect, where each node has a human-readable `label` and nested `children`.
-
-Expose only:
-
-```text
-Effects
-├─ ctx.on("...")
-├─ ctx.provide("...")
-└─ custom labeled effect
-   └─ nested labeled effect
-```
-
-Rules:
-
-- effect data belongs to the live Fiber snapshot, not historical dispatch records;
-- preserve label + tree structure only;
-- no raw disposer/function references;
-- no plugin config, intercept values, stacks, captured arguments, file contents, or credentials;
-- empty/unlabeled effects remain honestly absent rather than reconstructed from unrelated registries.
-
-#### O4 — Minimal real DSH Web E2E
-
-Add the smallest maintainable browser/profile smoke harness that validates composition beyond jsdom.
-
-Minimum scenario:
-
-1. build the package;
-2. install/link it into a disposable DSH Web profile;
-3. start DSH Web;
-4. open Cordis DevTools from the real sidebar footer;
-5. switch Events → Timeline → Fibers;
-6. assert the panel renders and the snapshot RPC succeeds;
-7. close the panel and verify no visible fatal error / broken module-loader path.
-
-Desirable follow-ups after the baseline exists:
-
-- collapsed sidebar trigger;
-- dark/light theme smoke;
-- one cross-navigation path;
-- one Effects expansion path.
-
-This harness should validate integration, not duplicate component-level assertions.
-
-#### O5 — v0.2 release hardening
-
-Before calling v0.2 complete:
-
-- README and architecture match shipped behavior;
-- observer-only invariants remain enforced;
-- all diagnostic histories remain bounded;
-- default collection remains metadata-first;
-- no target listener wrapper exists in the disabled/default path;
-- full policy/typecheck/test/build/client-bundle checks pass;
-- real DSH Web smoke passes.
-
-### v0.2 exit criteria
-
-v0.2 is complete when a user can follow this read-only diagnostic loop:
+### v0.2 diagnostic loop
 
 ```text
 Event ──owner──► Fiber ──effects──► lifecycle registrations
@@ -156,7 +54,7 @@ Event ──owner──► Fiber ──effects──► lifecycle registrations
   └─ owned facts   └── dispatch context ── Timeline
 ```
 
-and every displayed fact is either authoritative live state or explicitly labeled bounded/derived state.
+No v0.2 completion claim implies npm publication, a Git tag, or any waterfall instrumentation. Those are separate maintainer decisions.
 
 ## v0.3 — Instrumented Waterfall Profiler
 
@@ -326,4 +224,4 @@ Unless new evidence changes priorities:
 
 ## Planning rule
 
-Milestone text is not implementation approval. Any decision-sensitive task still follows `development-loop`: discover → proposed Agent Note → maintainer checkpoint → implementation. In particular, I0 must be approved before v0.3 production instrumentation begins.
+Milestone text is not implementation approval. Any decision-sensitive task still follows `development-loop`: discover → proposed Agent Note → maintainer checkpoint → implementation. In particular, **I0 must be approved before v0.3 production instrumentation begins**.
