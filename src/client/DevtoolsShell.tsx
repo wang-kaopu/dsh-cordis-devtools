@@ -75,6 +75,10 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
     () => events.filter(event => event.name.toLowerCase().includes(normalizedQuery)),
     [events, normalizedQuery],
   )
+  const liveFiberUids = useMemo(
+    () => new Set(fibers.map(fiber => fiber.uid)),
+    [fibers],
+  )
 
   useEffect(() => {
     if (events.length === 0) {
@@ -155,6 +159,21 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
   const switchView = (next: DevtoolsView): void => {
     setView(next)
     setQuery('')
+  }
+
+  const openFiber = (uid: number): void => {
+    if (!liveFiberUids.has(uid)) return
+    setSelectedFiberUid(uid)
+    setFiberStateFilter('all')
+    setQuery('')
+    setView('fibers')
+  }
+
+  const openEvent = (name: string): void => {
+    if (!events.some(event => event.name === name)) return
+    setSelected(name)
+    setQuery('')
+    setView('events')
   }
 
   const subtitle = state.snapshot === undefined
@@ -301,13 +320,17 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
                 visibleEvents={visibleEvents}
                 activeEventName={activeEvent?.name}
                 activeListeners={activeListeners}
+                liveFiberUids={liveFiberUids}
                 onSelect={setSelected}
+                onOpenFiber={openFiber}
               />
             ) : view === 'timeline' ? (
               <TimelineView
                 dispatches={visibleDispatches}
                 expanded={expandedDispatches}
+                liveFiberUids={liveFiberUids}
                 onToggle={toggleDispatch}
+                onOpenFiber={openFiber}
               />
             ) : (
               <FibersView
@@ -316,6 +339,7 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
                 listeners={state.snapshot.listeners}
                 dispatches={state.snapshot.dispatches}
                 onSelect={setSelectedFiberUid}
+                onOpenEvent={openEvent}
               />
             )}
           </div>
