@@ -15,6 +15,12 @@ export interface ListenerSnapshot {
   owner: FiberSnapshot | null
 }
 
+export interface EventSnapshot {
+  name: string
+  listenerCount: number
+  listenerIds: number[]
+}
+
 export interface DispatchRecord {
   id: number
   timestamp: number
@@ -27,6 +33,7 @@ export interface DispatchRecord {
 
 export interface DevtoolsSnapshot {
   generatedAt: number
+  events: EventSnapshot[]
   listeners: ListenerSnapshot[]
   fibers: FiberSnapshot[]
   dispatches: DispatchRecord[]
