@@ -36,6 +36,26 @@ describe('EventExplorerStore', () => {
     store.dispose()
   })
 
+  it('does not expose loading state during background polling', async () => {
+    const store = new EventExplorerStore({
+      async fetchSnapshot() {
+        return snapshot
+      },
+    })
+
+    await store.refresh()
+    const observedLoading: boolean[] = []
+    const unsubscribe = store.subscribe(() => {
+      observedLoading.push(store.getSnapshot().loading)
+    })
+
+    await store.refresh({ background: true })
+
+    expect(observedLoading).toEqual([false])
+    unsubscribe()
+    store.dispose()
+  })
+
   it('marks the retained snapshot stale after a failed refresh', async () => {
     let shouldFail = false
     const store = new EventExplorerStore({
