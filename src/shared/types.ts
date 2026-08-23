@@ -6,6 +6,12 @@ export interface FiberSnapshot {
   state: string
 }
 
+export interface LiveFiberSnapshot extends FiberSnapshot {
+  uid: number
+  parent: FiberSnapshot | null
+  inject: string[]
+}
+
 export interface ListenerSnapshot {
   id: number
   event: string
@@ -35,7 +41,7 @@ export interface DevtoolsSnapshot {
   generatedAt: number
   events: EventSnapshot[]
   listeners: ListenerSnapshot[]
-  fibers: FiberSnapshot[]
+  fibers: LiveFiberSnapshot[]
   dispatches: DispatchRecord[]
 }
 
