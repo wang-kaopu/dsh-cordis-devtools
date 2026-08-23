@@ -10,7 +10,14 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
     "types": []
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "tsdown.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "tsdown.config.ts"
+  ]
 }

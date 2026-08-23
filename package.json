@@ -10,10 +10,7 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./client": {
-      "types": "./lib/client/index.d.ts",
-      "default": "./lib/client/index.js"
-    },
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -32,11 +29,20 @@
     "verify:notes": "node scripts/verify-agent-notes.mjs",
     "verify:note-required": "node scripts/verify-note-required.mjs",
     "verify:links": "node scripts/verify-links.mjs",
-    "verify:policy": "pnpm verify:notes && pnpm verify:links && pnpm verify:note-required"
+    "verify:policy": "pnpm verify:notes && pnpm verify:links && pnpm verify:note-required",
+    "verify:client-bundle": "node scripts/verify-client-bundle.mjs"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
     }
   },
   "keywords": [
@@ -57,10 +63,21 @@
     "url": "https://github.com/wang-kaopu/dsh-cordis-devtools/issues"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1"
+    "@deepseek-ai/cordis": "^4.0.1",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "jsdom": "^30.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"

@@ -39,3 +39,6 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Verify built client bundle
+        run: pnpm verify:client-bundle

@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { ObserverCollector } from './host/collector.js'
+import { installDevtoolsRpc } from './host/rpc.js'
 
 export const name = 'dsh-cordis-devtools'
 export const provide = 'cordisDevtools'
@@ -15,6 +16,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   })
 
   ctx.provide('cordisDevtools', collector)
+  installDevtoolsRpc(ctx, collector)
 }
 
 export type {
