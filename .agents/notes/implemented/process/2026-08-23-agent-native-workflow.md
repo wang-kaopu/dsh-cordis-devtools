@@ -16,6 +16,8 @@ Non-trivial changes add or update an Agent Note in the same pull request. Notes 
 
 Repository scripts enforce the subset of the policy that is mechanically observable: Agent Note path/format/lifecycle, a minimum same-PR Note requirement for code/test/process surfaces, and valid repository-local Markdown links. CI executes these gates alongside type checking, tests, and build verification.
 
+CI intentionally does not enable `actions/setup-node` dependency caching until the repository has a `pnpm-lock.yaml`; caching without a lockfile fails before repository gates can run. Once a lockfile becomes part of the repository contract, cache setup can be reintroduced with that file as its dependency key.
+
 Two small repository skills define recurring workflows: selecting pre-push checks from evidence, and converting incidents into postmortems, `bug-fix` notes, and regression defenses. `docs/defensive-patterns.md` holds defenses learned from failures and high-risk runtime areas.
 
 The testing strategy grows in layers rather than copying DeepSeek Harness's full gate suite immediately: pure unit tests first, real Cordis integration next, built-plugin/DSH smoke tests when the bundle path is exercised, keyless runtime replay once stable trace fixtures exist, and browser snapshots once the Web UI exists.
