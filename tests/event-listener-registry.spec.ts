@@ -46,8 +46,8 @@ describe('Event / Listener Registry', () => {
     expect(listeners.map(listener => listener.owner?.name)).toEqual(['plugin-b', 'plugin-a', 'plugin-b'])
     expect(listeners.map(listener => listener.prepend)).toEqual([true, false, false])
     expect(listeners.map(listener => listener.global)).toEqual([true, false, false])
-    expect(listeners[0].owner).toMatchObject({ uid: fiberB.uid, state: String(fiberB.state) })
-    expect(listeners[1].owner).toMatchObject({ uid: fiberA.uid, state: String(fiberA.state) })
+    expect(listeners[0].owner).toMatchObject({ uid: fiberB.uid, state: 'active' })
+    expect(listeners[1].owner).toMatchObject({ uid: fiberA.uid, state: 'active' })
 
     const ids = listeners.map(listener => listener.id)
     expect(new Set(ids).size).toBe(3)
@@ -122,6 +122,75 @@ describe('Event / Listener Registry', () => {
 
     expect(notificationCount).toBe(1)
     expect(sawRegisteredListener).toBe(true)
+    unsubscribe()
+  })
+})
+
+describe('Fiber Registry', () => {
+  it('enumerates live registry fibers even when they predate DevTools and own no listeners', async () => {
+    const ctx = new Context()
+    const plugin = {
+      name: 'quiet-plugin',
+      apply() {},
+    }
+
+    const firstFiber = await ctx.plugin(plugin)
+    const secondFiber = await ctx.plugin(plugin)
+    const collector = new ObserverCollector(ctx)
+
+    expect(collector.snapshot().fibers).toEqual([
+      {
+        uid: firstFiber.uid,
+        name: 'quiet-plugin',
+        state: 'active',
+        parent: { uid: 0, name: 'root', state: 'active' },
+        inject: [],
+      },
+      {
+        uid: secondFiber.uid,
+        name: 'quiet-plugin',
+        state: 'active',
+        parent: { uid: 0, name: 'root', state: 'active' },
+        inject: [],
+      },
+    ])
+  })
+
+  it('exposes inject names and readable pending state without exposing config values', () => {
+    const ctx = new Context()
+    const waiting = ctx.plugin({
+      name: 'waiting-plugin',
+      inject: ['missing-service'],
+      apply() {},
+    })
+    const collector = new ObserverCollector(ctx)
+
+    expect(collector.snapshot().fibers.find(fiber => fiber.uid === waiting.uid)).toEqual({
+      uid: waiting.uid,
+      name: 'waiting-plugin',
+      state: 'pending',
+      parent: { uid: 0, name: 'root', state: 'active' },
+      inject: ['missing-service'],
+    })
+  })
+
+  it('removes disposed fibers from the authoritative snapshot before deferred plugin invalidation', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin({ name: 'temporary-plugin', apply() {} })
+    const uid = fiber.uid
+    const collector = new ObserverCollector(ctx)
+    let sawRemoved = false
+
+    const unsubscribe = collector.subscribe(() => {
+      if (!collector.snapshot().fibers.some(candidate => candidate.uid === uid)) sawRemoved = true
+    })
+
+    expect(collector.snapshot().fibers.some(candidate => candidate.uid === uid)).toBe(true)
+    await fiber.dispose()
+    await Promise.resolve()
+
+    expect(collector.snapshot().fibers.some(candidate => candidate.uid === uid)).toBe(false)
+    expect(sawRemoved).toBe(true)
     unsubscribe()
   })
 })
