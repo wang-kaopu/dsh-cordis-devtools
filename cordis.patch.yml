@@ -1,0 +1,4 @@
+# dsh-cordis-devtools bundle patch.
+- insert:
+    - id: dsh-cordis-devtools
+      name: dsh-cordis-devtools

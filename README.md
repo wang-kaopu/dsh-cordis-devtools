@@ -11,14 +11,57 @@ Runtime inspector and event profiler for DeepSeek Harness / Cordis.
 - Keep collection independent from presentation so a Web UI, CLI, or export format can consume the same snapshots.
 - Stay observer-first: v0.1 does not wrap or replace listeners.
 
+## Architecture
+
+```text
+Cordis runtime
+  ├─ ctx.events._hooks ───────────────┐
+  ├─ internal/dispatch ───────────────┤
+  ├─ internal/plugin ─────────────────┤
+  └─ internal/status ─────────────────┤
+                                      ▼
+                             ObserverCollector
+                              ├─ listener snapshot
+                              ├─ observed fibers
+                              └─ dispatch ring buffer
+                                      │
+                                      ▼
+                           CordisDevtoolsService
+                              ├─ snapshot()
+                              ├─ clearDispatches()
+                              └─ subscribe()
+                                      │
+                         ┌────────────┴────────────┐
+                         ▼                         ▼
+                   future Web UI             future exporters
+```
+
+The internal Cordis access is isolated behind `src/host/cordis-adapter.ts`. If Cordis changes its diagnostic internals, the rest of the project should not need to change.
+
+## Project structure
+
+```text
+src/
+├─ host/
+│  ├─ collector.ts        # observer core
+│  ├─ cordis-adapter.ts   # narrow boundary around Cordis diagnostics
+│  └─ ring-buffer.ts      # bounded dispatch history
+├─ shared/
+│  └─ types.ts            # serializable snapshot contracts
+├─ client/
+│  └─ index.ts            # reserved Web client entry
+└─ index.ts               # DSH / Cordis host plugin entry
+```
+
 ## Planned milestones
 
 ### v0.1 — Observer core
 
-- Fiber metadata snapshots
-- Event/listener registry
+- Live event/listener registry snapshots
+- Fiber ownership for listeners where Cordis exposes it
 - Dispatch timeline
 - Bounded in-memory history
+- Snapshot subscription API
 
 ### v0.2 — Web DevTools
 
@@ -43,15 +86,17 @@ pnpm test
 pnpm build
 ```
 
-To install a local checkout into a DSH profile after building:
+Install a local checkout into a DSH profile after building:
 
 ```bash
 dsh plugin --profile web add ./
 ```
 
-## Status
+The package declares a DSH bundle and inserts the host plugin through `cordis.patch.yml`.
 
-DeepSeek Harness is still evolving quickly. The observer core intentionally uses a narrow Cordis integration boundary so internal API changes can be isolated in one place.
+## Important semantics
+
+`internal/dispatch` fires before Cordis resolves and executes the public event listeners. v0.1 therefore records dispatch occurrence and registered-listener metadata, **not** generic dispatch duration or per-listener duration. Those measurements require explicit instrumentation and are intentionally deferred.
 
 ## License
 
