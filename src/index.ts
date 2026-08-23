@@ -22,6 +22,7 @@ export type {
   DevtoolsSnapshot,
   DispatchMode,
   DispatchRecord,
+  EventSnapshot,
   FiberSnapshot,
   ListenerSnapshot,
 } from './shared/types.js'

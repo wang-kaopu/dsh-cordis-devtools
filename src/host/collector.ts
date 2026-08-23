@@ -4,7 +4,9 @@ import type {
   DevtoolsSnapshot,
   DispatchMode,
   DispatchRecord,
+  EventSnapshot,
   FiberSnapshot,
+  ListenerSnapshot,
 } from '../shared/types.js'
 import { CordisAdapter } from './cordis-adapter.js'
 import { RingBuffer } from './ring-buffer.js'
@@ -19,6 +21,7 @@ export class ObserverCollector implements CordisDevtoolsService {
   private readonly observedFibers = new Map<string, FiberSnapshot>()
   private readonly subscribers = new Set<() => void>()
   private readonly adapter: CordisAdapter
+  private listenerNotificationQueued = false
 
   constructor(
     private readonly ctx: Context,
@@ -36,6 +39,7 @@ export class ObserverCollector implements CordisDevtoolsService {
 
     return {
       generatedAt: Date.now(),
+      events: buildEventSnapshots(listeners),
       listeners,
       fibers: [...this.observedFibers.values()].sort(compareFibers),
       dispatches: this.dispatches.toArray(),
@@ -85,10 +89,20 @@ export class ObserverCollector implements CordisDevtoolsService {
     }, { global: true })
 
     on('internal/listener', () => {
-      // Listener data is read live from ctx.events._hooks. This event only
-      // invalidates consumers so future UIs can refresh without polling.
-      this.notify()
+      // Cordis emits internal/listener before storing the hook in _hooks.
+      // Defer invalidation so a subscriber refreshing from the live registry
+      // observes the completed registration rather than the pre-insert state.
+      this.scheduleListenerNotification()
     }, { global: true })
+  }
+
+  private scheduleListenerNotification(): void {
+    if (this.listenerNotificationQueued) return
+    this.listenerNotificationQueued = true
+    queueMicrotask(() => {
+      this.listenerNotificationQueued = false
+      this.notify()
+    })
   }
 
   private seedFibersFromListeners(): void {
@@ -105,6 +119,26 @@ export class ObserverCollector implements CordisDevtoolsService {
   private notify(): void {
     for (const subscriber of this.subscribers) subscriber()
   }
+}
+
+function buildEventSnapshots(listeners: ListenerSnapshot[]): EventSnapshot[] {
+  const listenerIdsByEvent = new Map<string, number[]>()
+  for (const listener of listeners) {
+    let ids = listenerIdsByEvent.get(listener.event)
+    if (ids == null) {
+      ids = []
+      listenerIdsByEvent.set(listener.event, ids)
+    }
+    ids.push(listener.id)
+  }
+
+  return [...listenerIdsByEvent.entries()]
+    .map(([name, listenerIds]) => ({
+      name,
+      listenerCount: listenerIds.length,
+      listenerIds,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function fiberKey(fiber: FiberSnapshot): string {
