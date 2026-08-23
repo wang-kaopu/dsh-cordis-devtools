@@ -2,7 +2,7 @@
 
 Runtime inspector and event profiler for DeepSeek Harness / Cordis.
 
-> Early development. The project is observer-first: inspect the runtime without wrapping target listeners or changing Cordis dispatch semantics.
+> v0.2 is observer-first: inspect the runtime without wrapping target listeners or changing Cordis dispatch semantics.
 
 ## Current capabilities
 
@@ -128,7 +128,7 @@ src/
 └─ index.ts               # DSH / Cordis host plugin entry
 ```
 
-## Planned milestones
+## Milestones
 
 ### v0.1 — Observer core
 
@@ -137,7 +137,7 @@ src/
 - Bounded dispatch timeline data ✓
 - Snapshot subscription API ✓
 
-### v0.2 — Web DevTools
+### v0.2 — Web DevTools ✓ complete
 
 - Event explorer ✓
 - Listener ordering view ✓
@@ -146,6 +146,7 @@ src/
 - Cross-view navigation ✓
 - Fiber Effects inspector ✓
 - Real DSH Web smoke ✓
+- Observer release-hardening invariants ✓
 
 ### v0.3 — Instrumented waterfall mode
 
@@ -153,6 +154,8 @@ src/
 - `next()` tracking
 - Short-circuit detection
 - Self time vs downstream time
+
+The v0.3 production instrumentation path remains blocked on the I0 architecture checkpoint in [the roadmap](docs/roadmap.md).
 
 ## Install into a DSH Web profile
 
