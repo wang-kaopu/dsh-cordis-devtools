@@ -18,6 +18,13 @@ Navigation reuses the existing shell state. It clears the search query and, when
 
 Historical dispatch references that no longer resolve to a live Fiber remain visible as historical metadata and are labeled `not live`; no synthetic Fiber is created.
 
+## Alternatives considered
+
+- Add a routing library or URL-addressable internal routes. Rejected because the panel already owns all three views and cross-navigation is transient presentation state.
+- Resolve historical dispatch fiber references through a second retained Fiber registry. Rejected because it would blur authoritative live state with history and duplicate Host state.
+- Make every historical fiber reference clickable and synthesize a detail page when live state is missing. Rejected because that would present stale metadata as if it were a current Fiber.
+- Use custom text-link controls for the relationship edges. Rejected where DSH `Pill` already provides a compact, semantically appropriate interaction.
+
 ## UI boundary
 
 Existing DSH `Pill` interactions are reused for compact relationship links. No router, new top-level view, Host API, store, or poller was introduced.
@@ -25,6 +32,10 @@ Existing DSH `Pill` interactions are reused for compact relationship links. No r
 ## Cleanup
 
 The Fiber Inspector explanatory footer had already been intentionally removed from the visible UI. The O1 split retained dead hidden markup for that copy; this task removes the stale JSX so a later CSS change cannot accidentally reveal it again.
+
+## Consequences
+
+The three existing views now form a diagnostic loop without changing the observer data model. Navigation is intentionally lossy when a historical Timeline record references a Fiber that has since disappeared: the historical context remains readable but is not navigable. Clearing search and Fiber-state filters on relationship navigation prioritizes reaching the explicit target over preserving unrelated presentation filters.
 
 ## Verification
 
