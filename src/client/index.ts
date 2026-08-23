@@ -1,7 +1,47 @@
-// Reserved browser entry for the v0.2 Web DevTools surface.
-//
-// The observer/data layer deliberately ships first. When the DSH client half
-// is enabled, this module will consume the serializable contracts from
-// ../shared/types rather than importing host internals.
+import { createElement, type ReactNode } from 'react'
+import type { Context } from '@deepseek-ai/cordis'
+import { EventExplorerAction } from './EventExplorer.js'
+import { createSnapshotPort, type ClientConnectionLike } from './port.js'
+import { EventExplorerStore } from './store.js'
 
-export const name = 'dsh-cordis-devtools-client'
+interface ClientSlotsLike {
+  inject(name: string, callback: () => unknown): unknown
+  register(
+    options: {
+      name: string
+      id?: string
+      order?: number
+      label?: string
+    },
+    component: (props: { wide: boolean }) => ReactNode,
+  ): unknown
+}
+
+export const name = 'dsh-cordis-devtools'
+export const inject = ['slots', 'connection']
+
+export function apply(ctx: Context): void {
+  const connection = requireService<ClientConnectionLike>(ctx, 'connection')
+  const slots = requireService<ClientSlotsLike>(ctx, 'slots')
+  const store = new EventExplorerStore(createSnapshotPort(connection))
+
+  ctx.effect(() => () => { store.dispose() }, 'dsh-cordis-devtools: dispose client snapshot store')
+
+  slots.inject('sidebar.footer.action', () => slots.register({
+    name: 'sidebar.footer.action',
+    id: 'cordis-devtools',
+    order: 100,
+    label: 'Cordis DevTools',
+  }, props => createElement(EventExplorerAction, {
+    wide: props.wide,
+    store,
+  })))
+}
+
+function requireService<T>(ctx: Context, name: string): T {
+  const service = ctx.get(name)
+  if (service === undefined || service === null) {
+    throw new Error(`dsh-cordis-devtools client: required service ${JSON.stringify(name)} is unavailable`)
+  }
+  return service as T
+}

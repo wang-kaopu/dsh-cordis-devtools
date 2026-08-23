@@ -1,13 +1,39 @@
 import { defineConfig } from 'tsdown'
 
-export default defineConfig({
-  entry: {
-    index: 'src/index.ts',
-    'client/index': 'src/client/index.ts',
+const CLIENT_EXTERNALS = [
+  'react',
+  'react/jsx-runtime',
+]
+
+export default defineConfig([
+  {
+    name: 'dsh-cordis-devtools',
+    entry: { index: 'src/index.ts' },
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'node',
+    target: 'es2022',
+    fixedExtension: false,
+    dts: true,
+    clean: true,
+    external: ['@deepseek-ai/cordis'],
   },
-  format: ['esm'],
-  dts: true,
-  clean: true,
-  outDir: 'lib',
-  external: ['@deepseek-ai/cordis'],
-})
+  {
+    name: 'dsh-cordis-devtools/client',
+    entry: { client: 'src/client/index.ts' },
+    outDir: 'lib',
+    format: ['cjs'],
+    platform: 'browser',
+    target: 'es2022',
+    dts: false,
+    sourcemap: true,
+    clean: false,
+    external: CLIENT_EXTERNALS,
+    outputOptions: {
+      entryFileNames: 'client.js',
+      banner: 'window.__ModuleLoader__.load({ id: "dsh-cordis-devtools", factory: (require) => {',
+      intro: 'var module = { exports: {} }; var exports = module.exports;',
+      footer: 'return module.exports; } });',
+    },
+  },
+])

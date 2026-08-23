@@ -18,10 +18,23 @@ src/host/collector.ts
     ▼
 src/shared/types.ts
     │  transport/presentation-neutral snapshots
-    ├──────────────► future CLI/export
+    ├────────────────────────► future CLI/export
+    │
     ▼
-src/client/
-       Web presentation
+src/host/rpc.ts
+    │  loopback-only DSH Connection adapter
+    ▼
+/cordis-devtools/snapshot
+    │
+    ▼
+src/client/port.ts
+    │  validates the serializable snapshot boundary
+    ▼
+src/client/store.ts
+    │  visible-only refresh state
+    ▼
+src/client/EventExplorer.tsx
+       additive sidebar Web presentation
 ```
 
 ### Host adapter
@@ -36,9 +49,21 @@ The collector listens to authoritative Cordis lifecycle and dispatch signals and
 
 `src/shared` describes facts the collector can support. A shared field is an observability contract: adding a field requires a reliable source, clear unknown/null semantics, and a decision about whether it is safe to expose to clients.
 
+Event registration and dispatch remain separate concepts. `EventSnapshot` represents the current live listener registry; invocation mode remains on concrete `DispatchRecord` entries because Cordis chooses `emit`, `parallel`, `serial`, `bail`, or `waterfall` per call.
+
+### Host-to-client transport
+
+The Web client does not read Host services or Cordis internals directly. `src/host/rpc.ts` projects the existing `CordisDevtoolsService.snapshot()` through DSH Connection at `/cordis-devtools/snapshot` with `loopback` authority. This adapter is read-only and contains no registry logic.
+
+The channel is installed through `ctx.inject(['connection'], ...)`, so Connection is optional for pure Cordis/Host use. DSH Connection owns the physical HTTP transport and lifecycle of the registered logical channel.
+
 ### Client
 
-The client renders snapshots and eventually subscribes to updates through a DSH-supported data plane. It must not reach through shared APIs into host `ctx.events`, fibers, or Cordis internals.
+The package emits a real DSH browser module at `./client`, separate from the Node Host artifact. The browser bundle registers through `window.__ModuleLoader__`, requests the runtime services through Cordis, and keeps React as a platform-provided module identity.
+
+`src/client/port.ts` is the transport compatibility seam. `src/client/store.ts` owns only refresh/loading/stale state. The React layer renders the shared snapshot and contributes additively to `sidebar.footer.action`; it does not maintain a second listener registry or infer Host facts.
+
+The first refresh strategy is intentionally simple: fetch immediately when the panel opens, poll once per second only while visible, abort/stop on close, and never overlap requests. A future high-rate Dispatch Timeline may replace this through a separate decision.
 
 ## Core invariants
 
@@ -46,7 +71,8 @@ The client renders snapshots and eventually subscribes to updates through a DSH-
 2. **Unknown stays unknown.** Derived values are labeled as derived; unsupported values are absent/null rather than fabricated.
 3. **Collection is bounded.** Timeline-like structures have fixed or configured retention.
 4. **Metadata-first privacy.** Raw event arguments, prompts, tool results, file contents, and credentials are not collected by default.
-5. **Lifecycle ownership is explicit.** Every observer/subscription is disposed with the owning plugin fiber.
+5. **Lifecycle ownership is explicit.** Every observer/subscription/channel/timer is disposed with the owning plugin or UI lifecycle.
+6. **Transport does not become a second source of truth.** Host RPC returns the collector snapshot; Client code does not recreate Cordis semantics.
 
 ## Instrumented mode boundary
 
@@ -56,4 +82,6 @@ Before adding that mode, create or update an architecture Agent Note covering wr
 
 ## Testing layers
 
-Pure helpers use unit tests. Runtime ownership and hook behavior should use real `@deepseek-ai/cordis`. Once package installation/loading becomes part of supported behavior, add a built/packed-artifact smoke path. Once Web UI is supported, add browser-level verification rather than relying only on component self-reports.
+Pure helpers use unit tests. Runtime ownership and hook behavior use real `@deepseek-ai/cordis`. Host-to-client adapters get contract tests at the Connection seam. Visible UI gets jsdom/React integration coverage. The built browser artifact is executed by `verify:client-bundle` to prove the actual `window.__ModuleLoader__` handoff works rather than relying only on source-level tests.
+
+A full DSH browser/profile smoke path should be added when the next Web feature makes maintaining that harness cheaper than repeatedly reasoning about the installed composition by hand.
