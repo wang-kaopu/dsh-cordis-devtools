@@ -20,7 +20,7 @@ function cssModulePlugin() {
       const file = importer === undefined ? source : resolve(dirname(importer), source)
       return `${CSS_VIRTUAL_PREFIX}${file}${CSS_VIRTUAL_SUFFIX}`
     },
-    async load(virtualId: string) {
+    async load(this: { addWatchFile(file: string): void }, virtualId: string) {
       if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
       const file = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
       this.addWatchFile(file)
