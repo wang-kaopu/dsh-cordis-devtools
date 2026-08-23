@@ -41,7 +41,22 @@ const snapshot: DevtoolsSnapshot = {
     },
   ],
   fibers: [
-    { uid: 4, name: 'plugin-alpha', state: 'active', parent: rootFiber, inject: ['logger'], effects: [] },
+    {
+      uid: 4,
+      name: 'plugin-alpha',
+      state: 'active',
+      parent: rootFiber,
+      inject: ['logger'],
+      effects: [
+        { label: 'ctx.on("alpha/event")', children: [] },
+        {
+          label: 'alpha lifecycle',
+          children: [
+            { label: 'nested cleanup', children: [] },
+          ],
+        },
+      ],
+    },
     { uid: 5, name: 'plugin-second', state: 'active', parent: rootFiber, inject: [], effects: [] },
     { uid: 8, name: 'plugin-beta', state: 'active', parent: rootFiber, inject: ['connection'], effects: [] },
     { uid: 9, name: 'plugin-waiting', state: 'pending', parent: rootFiber, inject: ['database'], effects: [] },
@@ -224,6 +239,17 @@ describe('EventExplorerAction', () => {
     expect(fiberDetail?.textContent).toContain('root')
     expect(fiberDetail?.textContent).not.toContain('Live registry inventory')
 
+    const effects = container.querySelector<HTMLElement>('[data-testid="cordis-devtools-effects"]')
+    expect(effects?.textContent).toContain('Effects')
+    expect(effects?.textContent).toContain('2 roots')
+    expect(effects?.textContent).toContain('ctx.on("alpha/event")')
+    expect(effects?.textContent).toContain('alpha lifecycle')
+    expect(effects?.textContent).not.toContain('nested cleanup')
+
+    const parentEffect = effects?.querySelector<HTMLElement>('[data-effect-path="1"] [data-disclosure-row]')
+    await act(async () => { parentEffect?.click() })
+    expect(effects?.textContent).toContain('nested cleanup')
+
     const pendingFilter = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="cordis-devtools-fiber-state-filters"] button')]
       .find(button => button.textContent === 'pending')
     expect(pendingFilter).not.toBeUndefined()
@@ -232,6 +258,9 @@ describe('EventExplorerAction', () => {
       .toEqual(['9'])
     expect(fiberDetail?.textContent).toContain('plugin-waiting')
     expect(fiberDetail?.textContent).toContain('database')
+    expect(effects?.textContent).toContain('0 roots')
+    expect(effects?.textContent).toContain('No labeled live effects.')
+    expect(effects?.textContent).not.toContain('nested cleanup')
 
     const allFiberFilter = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="cordis-devtools-fiber-state-filters"] button')]
       .find(button => button.textContent === 'all')
