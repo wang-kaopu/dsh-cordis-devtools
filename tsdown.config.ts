@@ -62,7 +62,9 @@ export default defineConfig([
     fixedExtension: false,
     dts: true,
     clean: true,
-    external: ['@deepseek-ai/cordis'],
+    deps: {
+      neverBundle: ['@deepseek-ai/cordis'],
+    },
   },
   {
     name: 'dsh-cordis-devtools/client',
@@ -74,7 +76,9 @@ export default defineConfig([
     dts: false,
     sourcemap: true,
     clean: false,
-    external: CLIENT_EXTERNALS,
+    deps: {
+      neverBundle: CLIENT_EXTERNALS,
+    },
     plugins: [cssModulePlugin()],
     outputOptions: {
       entryFileNames: 'client.js',
