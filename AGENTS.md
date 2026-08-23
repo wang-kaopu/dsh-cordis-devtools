@@ -43,17 +43,16 @@ Use evidence in this order as the project grows:
 4. Keyless recorded runtime fixtures when traces become stable enough to replay.
 5. Browser snapshots when the Web DevTools surface ships.
 
-Do not add a higher layer before there is real behavior for it to protect. Once a regression reaches users, add the narrowest regression test or gate that would have stopped it.
+Do not add a higher layer before there is real behavior for it to protect. When a regression exposes a reusable gap, add the narrowest regression test, gate, runtime assertion, or defensive rule that would have stopped it.
 
 ## Defensive patterns
 
-Read [docs/defensive-patterns.md](docs/defensive-patterns.md) before changing lifecycle handling, listener instrumentation, teardown, tracing, buffering, or payload capture. Incidents follow [the postmortem process](docs/postmortem/README.md): postmortem → `bug-fix` Agent Note → regression test or executable guardrail.
+Read [docs/defensive-patterns.md](docs/defensive-patterns.md) before changing lifecycle handling, listener instrumentation, teardown, tracing, buffering, or payload capture. A `bug-fix` Agent Note is required when a fix changes a durable decision or contract, not for every ordinary bug fix.
 
 ## Agent workflows
 
 Reusable procedures live under `.agents/skills/`:
 
 - [pre-push checks](.agents/skills/pre-push-checks/SKILL.md) — select checks from the changed surface and evidence needed.
-- [incident to guardrail](.agents/skills/incident-to-guardrail/SKILL.md) — turn a failure into a postmortem, decision record, and defense.
 
 All repository-local Markdown links are relative so `pnpm verify:links` can validate them. `CLAUDE.md` is a symlink to this file; keep one source of standing orders.

@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-The repository is intended to be developed heavily with coding agents, but its initial scaffold only has ordinary source, tests, and CI. A cold-start agent can discover what the code does, yet it cannot reliably recover why architectural choices were made, which alternatives were already rejected, which checks prove a change, or how an incident should become a permanent defense. Prose-only conventions would also rely on each agent remembering to follow them.
+The repository is intended to be developed heavily with coding agents, but its initial scaffold only has ordinary source, tests, and CI. A cold-start agent can discover what the code does, yet it cannot reliably recover why architectural choices were made, which alternatives were already rejected, which checks prove a change, or how regressions should become durable defenses. Prose-only conventions would also rely on each agent remembering to follow them.
 
 ## Decision
 
@@ -18,7 +18,7 @@ Repository scripts enforce the subset of the policy that is mechanically observa
 
 CI intentionally does not enable `actions/setup-node` dependency caching until the repository has a `pnpm-lock.yaml`; caching without a lockfile fails before repository gates can run. Once a lockfile becomes part of the repository contract, cache setup can be reintroduced with that file as its dependency key.
 
-Two small repository skills define recurring workflows: selecting pre-push checks from evidence, and converting incidents into postmortems, `bug-fix` notes, and regression defenses. `docs/defensive-patterns.md` holds defenses learned from failures and high-risk runtime areas.
+One repository skill defines the recurring pre-push workflow for selecting checks from evidence. `docs/defensive-patterns.md` holds durable defenses for failure-prone runtime areas, while ordinary regressions are expected to add the narrowest useful test, gate, runtime assertion, or defensive rule rather than a mandatory incident document.
 
 The testing strategy grows in layers rather than copying DeepSeek Harness's full gate suite immediately: pure unit tests first, real Cordis integration next, built-plugin/DSH smoke tests when the bundle path is exercised, keyless runtime replay once stable trace fixtures exist, and browser snapshots once the Web UI exists.
 
@@ -32,10 +32,12 @@ The testing strategy grows in layers rather than copying DeepSeek Harness's full
 
 **Require an Agent Note for every changed file.** Rejected because typo fixes and mechanical edits do not carry reusable rationale. The automated requirement targets code, tests, package/build config, scripts, and CI; maintainers can still require a Note for non-trivial documentation decisions.
 
+**Require formal postmortems for material regressions now.** Rejected at the current repository scale. A dedicated postmortem template and incident skill add ceremony before there is enough operational history to justify them. If repeated or high-impact failures later show that bug-fix Notes plus regression defenses are insufficient, the repository can introduce a formal postmortem process then.
+
 ## Consequences
 
 Every meaningful PR carries a small documentation cost, and process changes must update both code/gates and their owning note. This is intentional: decisions become repository data instead of conversational memory.
 
-The workflow is deliberately incomplete. Coverage gates, real DSH e2e, keyless trace replay, browser snapshots, label taxonomy, stacked PR automation, and bilingual documentation should be added only when concrete repository behavior or collaboration pressure creates a risk they can catch.
+The workflow is deliberately incomplete. Coverage gates, real DSH e2e, keyless trace replay, browser snapshots, label taxonomy, stacked PR automation, bilingual documentation, and formal postmortems should be added only when concrete repository behavior or collaboration pressure creates a risk they can catch.
 
-Incidents are not complete when the bug is fixed. A material incident should leave behind a postmortem, a `bug-fix` Agent Note when a decision or missing contract is involved, and the narrowest test or executable guardrail that would have prevented recurrence.
+A regression is not complete when only the symptom is patched if the same class of failure can recur unnoticed. Add the narrowest reusable defense; use a `bug-fix` Agent Note when the fix establishes or changes a durable decision or contract.
