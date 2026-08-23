@@ -55,8 +55,7 @@
 .timelineMeta,
 .ownerMeta,
 .fiberListMeta,
-.fiberStatLabel,
-.fiberNotice {
+.fiberStatLabel {
   color: var(--dsw-alias-label-secondary, #68707a);
   font-size: 11px;
 }
@@ -327,12 +326,15 @@
 .fiberStats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
   gap: 8px;
   margin: 12px 0 16px;
 }
 
 .fiberStat {
   display: grid;
+  grid-template-rows: 22px minmax(30px, auto);
+  align-content: start;
   gap: 4px;
   padding: 10px;
 }
@@ -343,26 +345,44 @@
   font-variant-numeric: tabular-nums;
 }
 
+.fiberStatLabel {
+  line-height: 1.35;
+}
+
 .fiberFacts {
   display: grid;
   gap: 9px;
 }
 
+.fiberFacts .timelineDetailRow,
 .fiberInjectRow {
-  align-items: flex-start;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
   font-size: 12px;
+}
+
+.fiberFacts .detailLabel,
+.fiberFacts .detailValue,
+.fiberInjectRow .detailLabel {
+  line-height: 20px;
+}
+
+.fiberInjectRow {
+  flex-wrap: initial;
 }
 
 .injectPills {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 5px;
+  min-height: 20px;
 }
 
 .fiberNotice {
-  margin-top: 18px;
-  line-height: 1.45;
+  display: none;
 }
 
 @media (max-width: 720px) {
