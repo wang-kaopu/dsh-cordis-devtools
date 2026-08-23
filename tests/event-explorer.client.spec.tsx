@@ -7,6 +7,7 @@ import { EventExplorerAction } from '../src/client/EventExplorer.js'
 import { EventExplorerStore } from '../src/client/store.js'
 import type { DevtoolsSnapshot } from '../src/shared/types.js'
 
+const rootFiber = { uid: 0, name: 'root', state: 'active' }
 const snapshot: DevtoolsSnapshot = {
   generatedAt: 1_787_496_000_000,
   events: [
@@ -40,9 +41,10 @@ const snapshot: DevtoolsSnapshot = {
     },
   ],
   fibers: [
-    { uid: 4, name: 'plugin-alpha', state: 'active' },
-    { uid: 5, name: 'plugin-second', state: 'active' },
-    { uid: 8, name: 'plugin-beta', state: 'active' },
+    { uid: 4, name: 'plugin-alpha', state: 'active', parent: rootFiber, inject: ['logger'] },
+    { uid: 5, name: 'plugin-second', state: 'active', parent: rootFiber, inject: [] },
+    { uid: 8, name: 'plugin-beta', state: 'active', parent: rootFiber, inject: ['connection'] },
+    { uid: 9, name: 'plugin-waiting', state: 'pending', parent: rootFiber, inject: ['database'] },
   ],
   dispatches: [
     {
@@ -86,7 +88,7 @@ afterEach(async () => {
 })
 
 describe('EventExplorerAction', () => {
-  it('keeps Events and Timeline in one DSH-aligned shell with one snapshot poller', async () => {
+  it('keeps Events, Timeline, and Fibers in one DSH-aligned shell with one snapshot poller', async () => {
     ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     let shouldFail = false
     let fetchCalls = 0
@@ -133,8 +135,7 @@ describe('EventExplorerAction', () => {
     expect(container.querySelector('[data-event-name="beta/event"]')).not.toBeNull()
     expect(panel?.textContent).toContain('plugin-beta')
 
-    const timelineButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
-      .find(button => button.textContent === 'Timeline')
+    const timelineButton = findButton(container, 'Timeline')
     expect(timelineButton).not.toBeUndefined()
     await act(async () => { timelineButton?.click() })
 
@@ -167,6 +168,39 @@ describe('EventExplorerAction', () => {
     expect([...container.querySelectorAll<HTMLElement>('[data-dispatch-id]')].map(row => row.dataset.dispatchId))
       .toEqual(['1'])
 
+    const fibersButton = findButton(container, 'Fibers')
+    expect(fibersButton).not.toBeUndefined()
+    await act(async () => { fibersButton?.click() })
+
+    expect(fetchCalls).toBe(1)
+    expect([...container.querySelectorAll<HTMLElement>('[data-fiber-uid]')].map(row => row.dataset.fiberUid))
+      .toEqual(['4', '5', '8', '9'])
+    const fiberDetail = container.querySelector<HTMLElement>('[data-testid="cordis-devtools-fiber-detail"]')
+    expect(fiberDetail?.textContent).toContain('plugin-alpha')
+    expect(fiberDetail?.textContent).toContain('owned listeners')
+    expect(fiberDetail?.textContent).toContain('owned events')
+    expect(fiberDetail?.textContent).toContain('recent dispatch-context hits')
+    expect(fiberDetail?.textContent).toContain('logger')
+    expect(fiberDetail?.textContent).toContain('root')
+
+    const pendingFilter = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="cordis-devtools-fiber-state-filters"] button')]
+      .find(button => button.textContent === 'pending')
+    expect(pendingFilter).not.toBeUndefined()
+    await act(async () => { pendingFilter?.click() })
+    expect([...container.querySelectorAll<HTMLElement>('[data-fiber-uid]')].map(row => row.dataset.fiberUid))
+      .toEqual(['9'])
+    expect(fiberDetail?.textContent).toContain('plugin-waiting')
+    expect(fiberDetail?.textContent).toContain('database')
+
+    const allFiberFilter = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="cordis-devtools-fiber-state-filters"] button')]
+      .find(button => button.textContent === 'all')
+    await act(async () => { allFiberFilter?.click() })
+    const fiberSearch = container.querySelector<HTMLInputElement>('[data-testid="cordis-devtools-search"]')
+    await setInput(fiberSearch, '8')
+    expect([...container.querySelectorAll<HTMLElement>('[data-fiber-uid]')].map(row => row.dataset.fiberUid))
+      .toEqual(['8'])
+    expect(fiberDetail?.textContent).toContain('plugin-beta')
+
     shouldFail = true
     const refresh = container.querySelector<HTMLButtonElement>('[data-testid="cordis-devtools-refresh"]')
     await act(async () => {
@@ -177,9 +211,14 @@ describe('EventExplorerAction', () => {
 
     expect(container.querySelector('[data-testid="cordis-devtools-error"]')?.textContent)
       .toContain('Stale snapshot · connection lost')
-    expect(panel?.textContent).toContain('alpha/event')
+    expect(panel?.textContent).toContain('plugin-beta')
   })
 })
+
+function findButton(container: HTMLElement, text: string): HTMLButtonElement | undefined {
+  return [...container.querySelectorAll<HTMLButtonElement>('button')]
+    .find(button => button.textContent === text)
+}
 
 async function setInput(input: HTMLInputElement | null, value: string): Promise<void> {
   expect(input).not.toBeNull()
