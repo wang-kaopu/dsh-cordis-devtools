@@ -99,7 +99,7 @@ The package declares a DSH bundle and inserts the host plugin through `cordis.pa
 
 This repository treats cold-start coding agents as first-class contributors. Short standing orders live in [AGENTS.md](AGENTS.md); durable decisions and rejected alternatives live in [Agent Notes](.agents/notes/README.md); executable policy gates validate note structure, same-PR decision evidence for non-trivial changes, and repository-local links.
 
-The process is intentionally smaller than DeepSeek Harness's full development system. New gates are added when this repository develops the behavior or failure mode they can actually protect. Material incidents follow the [postmortem workflow](docs/postmortem/README.md) and should leave behind a regression defense, not only a code fix.
+The process is intentionally smaller than DeepSeek Harness's full development system. New gates are added when this repository develops behavior or failure modes they can actually protect. Regressions should leave behind the narrowest useful defense, but the current repository does not require a formal postmortem process.
 
 ## Important semantics
 
