@@ -56,7 +56,7 @@ export class ObserverCollector implements CordisDevtoolsService {
   private installObservers(): void {
     const on = this.ctx.on.bind(this.ctx) as (
       event: string,
-      listener: (...args: any[]) => unknown,
+      listener: (...args: never[]) => unknown,
       options?: { global?: boolean; prepend?: boolean },
     ) => () => boolean
 
