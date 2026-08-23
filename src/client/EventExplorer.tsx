@@ -360,7 +360,7 @@ function TimelineView({
                   <span className={css.timelineCollapsed}>
                     <Pill>{record.mode}</Pill>
                     <span className={css.timelineMeta}>{formatTime(record.timestamp)}</span>
-                    <span className={css.timelineMeta}>{record.registeredListeners} listeners</span>
+                    <span className={css.timelineMeta}>{record.registeredListeners} registered</span>
                   </span>
                 )}
               >
