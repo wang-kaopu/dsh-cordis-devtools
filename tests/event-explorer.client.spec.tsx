@@ -107,7 +107,9 @@ describe('EventExplorerAction', () => {
     expect(search).not.toBeNull()
     await act(async () => {
       if (search !== null) {
-        search.value = 'beta'
+        const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+        expect(valueSetter).toBeTypeOf('function')
+        valueSetter?.call(search, 'beta')
         search.dispatchEvent(new Event('input', { bubbles: true }))
       }
     })
