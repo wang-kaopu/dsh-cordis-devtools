@@ -1,15 +1,40 @@
 .root {
   position: relative;
-}
-
-.trigger {
+  flex: none;
+  display: flex;
+  align-items: center;
   width: 100%;
 }
 
-.triggerRail {
+.root .trigger {
+  width: calc(100% + 4px);
+  height: 42px;
+  margin: 4px -2px;
+  padding: 0 10px 0 8px;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  gap: 8px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.root .trigger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.root .triggerRail {
   width: 36px;
   min-width: 36px;
-  padding-inline: 0;
+  height: 36px;
+  margin: 8px 0 10px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+  border-radius: 50%;
 }
 
 .triggerWide {
