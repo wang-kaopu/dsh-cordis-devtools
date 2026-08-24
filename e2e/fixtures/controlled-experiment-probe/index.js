@@ -1,5 +1,5 @@
 export const name = 'dsh-cordis-devtools-e2e-controlled-experiment-probe'
-export const inject = ['tools', 'approval', 'cordisDevtools']
+export const inject = ['tools', 'approval', 'sessions', 'cordisDevtools']
 
 const START_TOOL = 'cordis_start_waterfall_experiment'
 const STOP_TOOL = 'cordis_stop_waterfall_experiment'
@@ -22,20 +22,15 @@ export async function apply(ctx) {
     return Promise.resolve('unavailable')
   })
 
-  const events = [
-    { type: 'turn/start', data: { turn: 1 } },
-    { type: 'user/message', data: {} },
-  ]
+  // Use the shipped SessionStore rather than a session-shaped fake. ToolRuntime
+  // validates that the caller's session is authoritative and live before the
+  // tool pipeline reaches our approval-gated definition. ApprovalService also
+  // requires its durable audit pair to be enclosed by an open turn.
+  const session = ctx.sessions.create('cordis-devtools-e2e-controlled-experiment-session')
+  session.append('turn/start', { turn: 1 })
   const agent = {
     id: 'cordis-devtools-e2e-controlled-experiment-agent',
-    session: {
-      events,
-      append(type, data) {
-        const event = { type, data }
-        events.push(event)
-        return event
-      },
-    },
+    session,
   }
 
   const signal = new AbortController().signal
