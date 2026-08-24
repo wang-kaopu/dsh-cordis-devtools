@@ -102,22 +102,31 @@ export function createCordisRuntimeInspectProvider(
           const row = readObject(input)
           const uid = readNumber(row, 'uid')
           const name = readString(row, 'name')
-          return diagnostics.inspectFiber(uid === undefined ? { name: name ?? '' } : { uid })
+          if ((uid === undefined) === (name === undefined)) {
+            throw new TypeError('inspectFiber requires exactly one of uid or name')
+          }
+          return diagnostics.inspectFiber(uid === undefined ? { name: name! } : { uid })
         }
         case 'searchDispatches': {
           const row = readObject(input)
+          const event = readString(row, 'event')
+          const fiberUid = readNumber(row, 'fiberUid')
+          const mode = readString(row, 'mode')
+          const limit = readNumber(row, 'limit')
           return diagnostics.searchDispatches({
-            ...readString(row, 'event') === undefined ? {} : { event: readString(row, 'event') },
-            ...readNumber(row, 'fiberUid') === undefined ? {} : { fiberUid: readNumber(row, 'fiberUid') },
-            ...readString(row, 'mode') === undefined ? {} : { mode: readString(row, 'mode') },
-            ...readNumber(row, 'limit') === undefined ? {} : { limit: readNumber(row, 'limit') },
+            ...(event === undefined ? {} : { event }),
+            ...(fiberUid === undefined ? {} : { fiberUid }),
+            ...(mode === undefined ? {} : { mode }),
+            ...(limit === undefined ? {} : { limit }),
           })
         }
         case 'profilerTraces': {
           const row = readObject(input)
+          const event = readString(row, 'event')
+          const limit = readNumber(row, 'limit')
           return diagnostics.profilerTraces({
-            ...readString(row, 'event') === undefined ? {} : { event: readString(row, 'event') },
-            ...readNumber(row, 'limit') === undefined ? {} : { limit: readNumber(row, 'limit') },
+            ...(event === undefined ? {} : { event }),
+            ...(limit === undefined ? {} : { limit }),
           })
         }
         default:
