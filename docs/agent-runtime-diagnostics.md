@@ -68,6 +68,8 @@ Example conceptual query:
 
 The first-party `cordisInspect` registry is provided by DSH Cordis Host Runner and its generic model tools are provided by DSH Tool Cordis. A composition that wants model-native inspection therefore needs the corresponding DSH Cordis tooling enabled; `dsh-cordis-devtools` does not duplicate those packages.
 
+The v0.4 integration suite also exercises the Provider against the real DSH Host registry: the probe discovers `CordisRuntime`, performs `inspectEvent`, and verifies the returned listener owner is still present in authoritative live Fiber inventory.
+
 ## External Agent path — MCP
 
 External coding agents connect to an MCP server embedded in the **same running DSH Host process** that owns the Cordis runtime.
@@ -81,6 +83,7 @@ The server is disabled by default. The intended configuration shape is:
     mcp:
       enabled: true
       port: 43127
+      failOnStartupError: false
 ```
 
 The server binds only to:
@@ -91,7 +94,9 @@ http://127.0.0.1:43127/mcp
 
 There is intentionally no first-slice configuration for `0.0.0.0` or another remote host.
 
-The Host prints the effective endpoint when the server starts. A bind failure is explicit; the server does not silently widen its network interface or choose a different configured port.
+The Host prints the effective endpoint when the server starts. A bind/startup failure is explicit and the server never silently widens its network interface or chooses a different configured port.
+
+By default, MCP is an optional adapter: a startup failure is logged and MCP remains unavailable, but the observer and human DevTools stay active. Set `failOnStartupError: true` when MCP availability is a deployment requirement and the plugin should reject activation if the listener cannot start.
 
 ### MCP tools
 
@@ -119,6 +124,8 @@ Agent
 ```
 
 The important difference is that the Agent no longer has to infer listener multiplicity from source-level `ctx.on(...)` calls.
+
+The protocol integration tests use the official MCP SDK client. In addition to in-process canonical-result parity tests, a real DSH Web smoke enables MCP in the running Host and connects from the test process over loopback before continuing the existing human UI/profiler assertions.
 
 ## Evidence semantics an Agent must preserve
 
@@ -162,6 +169,27 @@ Event inspection can therefore report a historical owner reference as not curren
 ### Profiler reads do not enable profiling
 
 `profilerTraces` reports the current instrumentation state and existing retained traces only. Merely giving an Agent access to diagnostics does not patch Cordis waterfall dispatch.
+
+## Runtime-only duplicate registration proof
+
+The deterministic v0.4 Agent proof models a source-level shape that appears singular while the live process contains two same-name Fibers that both own a listener for the same event.
+
+The expected evidence chain is:
+
+```text
+inspectEvent
+  → two current listeners
+  → owner uid A + owner uid B
+inspectFiber(name)
+  → two authoritative live Fibers
+inspectFiber(uid A / uid B)
+  → each Fiber owns the event
+searchDispatches
+  → recent occurrences newest-first
+  → bounded: true
+```
+
+If a query limit omits a currently retained match, `truncated: true` is returned separately from the bounded-retention signal. This is the key distinction that prevents an Agent from turning recent runtime evidence into a claim about complete history.
 
 ## Privacy boundary
 
