@@ -1,19 +1,29 @@
+import { createServer as createTcpServer, type Server as TcpServer } from 'node:net'
+import { Context } from '@deepseek-ai/cordis'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RuntimeDiagnosticsQuery } from '../src/host/diagnostics.js'
-import { startEmbeddedMcpServer, type EmbeddedMcpHandle } from '../src/host/mcp.js'
+import {
+  installEmbeddedMcpServer,
+  startEmbeddedMcpServer,
+  type EmbeddedMcpHandle,
+} from '../src/host/mcp.js'
 import type { DevtoolsSnapshot } from '../src/shared/types.js'
 import type { WaterfallProfilerSnapshot } from '../src/shared/trace.js'
 
 let handle: EmbeddedMcpHandle | undefined
 let client: Client | undefined
+let blocker: TcpServer | undefined
 
 afterEach(async () => {
   await client?.close()
   client = undefined
   await handle?.close()
   handle = undefined
+  await closeTcpServer(blocker)
+  blocker = undefined
+  vi.restoreAllMocks()
 })
 
 function diagnostics(): RuntimeDiagnosticsQuery {
@@ -57,11 +67,29 @@ function diagnostics(): RuntimeDiagnosticsQuery {
   })
 }
 
-async function connect() {
-  handle = await startEmbeddedMcpServer(diagnostics(), { port: 0 })
+async function connect(query: RuntimeDiagnosticsQuery = diagnostics()) {
+  handle = await startEmbeddedMcpServer(query, { port: 0 })
   client = new Client({ name: 'dsh-cordis-devtools-test', version: '1.0.0' })
   await client.connect(new StreamableHTTPClientTransport(new URL(handle.url)))
   return client
+}
+
+async function occupyLoopbackPort(): Promise<number> {
+  blocker = createTcpServer()
+  await new Promise<void>((resolve, reject) => {
+    blocker!.once('error', reject)
+    blocker!.listen(0, '127.0.0.1', () => resolve())
+  })
+  const address = blocker.address()
+  if (address === null || typeof address === 'string') throw new Error('missing occupied TCP port')
+  return address.port
+}
+
+async function closeTcpServer(server: TcpServer | undefined): Promise<void> {
+  if (server === undefined || !server.listening) return
+  await new Promise<void>((resolve, reject) => {
+    server.close(error => error === undefined ? resolve() : reject(error))
+  })
 }
 
 describe('embedded MCP diagnostics', () => {
@@ -81,20 +109,16 @@ describe('embedded MCP diagnostics', () => {
     expect(listed.tools.every(tool => tool.annotations?.readOnlyHint === true)).toBe(true)
   })
 
-  it('returns the same canonical live event evidence through a real MCP call', async () => {
-    const connected = await connect()
+  it('returns exactly the canonical direct-query event result through a real MCP call', async () => {
+    const query = diagnostics()
+    const connected = await connect(query)
     const result = await connected.callTool({
       name: 'cordis_inspect_event',
       arguments: { name: 'demo/event' },
     })
 
     expect(result.isError).not.toBe(true)
-    expect(result.structuredContent).toMatchObject({
-      name: 'demo/event',
-      found: true,
-      listenerCount: 1,
-      listeners: [{ id: 1, ownerLive: true }],
-    })
+    expect(result.structuredContent).toEqual(query.inspectEvent('demo/event'))
   })
 
   it('preserves bounded dispatch semantics and keeps profiler reads disabled', async () => {
@@ -130,5 +154,19 @@ describe('embedded MCP diagnostics', () => {
     expect(result.content).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'text', text: expect.stringContaining('exactly one') }),
     ]))
+  })
+
+  it('contains listener startup failure by default and supports explicit fail-fast', async () => {
+    const port = await occupyLoopbackPort()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(installEmbeddedMcpServer(new Context(), diagnostics(), { port })).resolves.toBeUndefined()
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('MCP diagnostics failed to start'))
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('EADDRINUSE'))
+
+    await expect(installEmbeddedMcpServer(new Context(), diagnostics(), {
+      port,
+      failOnStartupError: true,
+    })).rejects.toMatchObject({ code: 'EADDRINUSE' })
   })
 })
