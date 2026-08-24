@@ -2,6 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, describe, expect, it } from 'vitest'
+import { createMcpExperimentControl } from '../src/host/mcp-experiment-control.js'
 import { startEmbeddedMcpServer, type EmbeddedMcpHandle } from '../src/host/mcp.js'
 import { DevtoolsService } from '../src/host/service.js'
 
@@ -50,7 +51,7 @@ describe('embedded MCP live experiment integration', () => {
     handle = await startEmbeddedMcpServer(service.diagnostics, {
       port: 0,
       token,
-      experiments: { enabled: true, control: service },
+      experiments: { enabled: true, control: createMcpExperimentControl(service) },
     })
     const connected = await connect(handle.url, token)
 
