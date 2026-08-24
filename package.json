@@ -1,7 +1,7 @@
 {
   "name": "dsh-cordis-devtools",
-  "version": "0.3.0",
-  "description": "Runtime inspector and event profiler for DeepSeek Harness / Cordis.",
+  "version": "0.4.0",
+  "description": "Runtime diagnostics and opt-in waterfall profiler for DeepSeek Harness / Cordis.",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -52,6 +52,9 @@
     "cordis",
     "devtools",
     "profiler",
+    "runtime-diagnostics",
+    "mcp",
+    "agentic",
     "plugin"
   ],
   "license": "Apache-2.0",
