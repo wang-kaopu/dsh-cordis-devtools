@@ -115,4 +115,42 @@ describe('ProfilerView', () => {
     expect(host.textContent).toContain('disabled')
     expect(host.textContent).toContain('No waterfall traces in the current window.')
   })
+
+  it('identifies an Agent-owned lease and exposes only the Human emergency-stop action', async () => {
+    const onSetInstrumentation = vi.fn()
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+    act(() => {
+      root!.render(
+        <ProfilerView
+          status="enabled"
+          experiment={{
+            generatedAt: 100,
+            instrumentation: 'enabled',
+            owner: {
+              kind: 'agent',
+              source: 'mcp',
+              leaseId: 'lease-agent',
+              startedAt: 100,
+              expiresAt: Date.now() + 15_000,
+            },
+          }}
+          traces={[]}
+          liveFiberUids={new Set()}
+          onSetInstrumentation={onSetInstrumentation}
+        />,
+      )
+    })
+
+    expect(host.querySelector('[data-testid="cordis-devtools-profiler-agent-owner"]')?.textContent)
+      .toContain('Agent-owned mcp experiment')
+    expect(host.textContent).toContain('Agent · mcp')
+    const button = host.querySelector<HTMLButtonElement>('[data-testid="cordis-devtools-profiler-toggle"]')
+    expect(button?.textContent).toBe('Stop Agent experiment')
+
+    await act(async () => { button?.click() })
+    expect(onSetInstrumentation).toHaveBeenCalledTimes(1)
+    expect(onSetInstrumentation).toHaveBeenCalledWith(false)
+  })
 })
