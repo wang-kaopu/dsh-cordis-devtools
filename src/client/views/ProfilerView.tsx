@@ -1,19 +1,31 @@
 import { useState } from 'react'
-import { DisclosureRow, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { WaterfallDispatchTrace, WaterfallListenerSpan } from '../../shared/trace.js'
+import { Button, DisclosureRow, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {
+  WaterfallDispatchTrace,
+  WaterfallInstrumentationState,
+  WaterfallListenerSpan,
+} from '../../shared/trace.js'
 import css from './ProfilerView.module.css'
 
-export type InstrumentationStatus = 'disabled' | 'enabled' | 'conflict' | 'unsupported'
-
 export interface ProfilerViewProps {
-  status: InstrumentationStatus
+  status: WaterfallInstrumentationState
   traces: readonly WaterfallDispatchTrace[]
+  busy?: boolean
+  onSetInstrumentation?(enabled: boolean): void
   onOpenFiber?(uid: number): void
 }
 
-export function ProfilerView({ status, traces, onOpenFiber }: ProfilerViewProps) {
+export function ProfilerView({
+  status,
+  traces,
+  busy = false,
+  onSetInstrumentation,
+  onOpenFiber,
+}: ProfilerViewProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const rows = [...traces].reverse()
+  const canToggle = (status === 'disabled' || status === 'enabled') && onSetInstrumentation !== undefined
+  const toggleLabel = status === 'enabled' ? 'Disable profiling' : 'Enable profiling'
 
   const toggle = (id: string): void => {
     setExpanded((current) => {
@@ -31,8 +43,28 @@ export function ProfilerView({ status, traces, onOpenFiber }: ProfilerViewProps)
           <strong className={css.title}>Waterfall Profiler</strong>
           <div className={css.subtitle}>Instrumented traces · metadata only</div>
         </div>
-        <Pill active={status === 'enabled'}>{status}</Pill>
+        <div className={css.headerActions}>
+          <Pill active={status === 'enabled'}>{status}</Pill>
+          {canToggle && (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="cordis-devtools-profiler-toggle"
+              disabled={busy}
+              onClick={() => { onSetInstrumentation(status !== 'enabled') }}
+            >
+              {toggleLabel}
+            </Button>
+          )}
+        </div>
       </header>
+
+      {status === 'conflict' && (
+        <div className={css.statusNote}>Instrumentation is unavailable because another runtime patch owns dispatch.</div>
+      )}
+      {status === 'unsupported' && (
+        <div className={css.statusNote}>This Cordis runtime is not compatible with waterfall instrumentation.</div>
+      )}
 
       {rows.length === 0 ? (
         <div className={css.empty}>No waterfall traces in the current window.</div>
