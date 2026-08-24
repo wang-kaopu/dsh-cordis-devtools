@@ -1,5 +1,3 @@
 - insert:
-    - id: cordis-host-runner
-      name: '@deepseek-ai/dsh-cordis-host-runner'
     - id: dsh-cordis-devtools-e2e-inspect-probe
       name: dsh-cordis-devtools-e2e-inspect-probe
