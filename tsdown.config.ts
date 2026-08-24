@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import { transform } from 'lightningcss'
 import { defineConfig } from 'tsdown'
 
@@ -34,7 +34,8 @@ function cssModulePlugin() {
       const classes: Record<string, string> = {}
       for (const [local, value] of Object.entries(cssExports ?? {})) classes[local] = value.name
       const css = code.toString()
-      const tagId = 'dsh-cordis-devtools/DevtoolsPanel.module.css'
+      const cssPath = relative(process.cwd(), file).replaceAll('\\', '/')
+      const tagId = `dsh-cordis-devtools/${cssPath}`
       return [
         `const css = ${JSON.stringify(css)};`,
         `const tagId = ${JSON.stringify(tagId)};`,
