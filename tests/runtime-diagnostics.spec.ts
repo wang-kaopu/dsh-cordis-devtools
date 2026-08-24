@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { RuntimeDiagnosticsQuery } from '../src/host/diagnostics.js'
+import type { WaterfallExperimentStatus } from '../src/shared/experiments.js'
 import type { DevtoolsSnapshot } from '../src/shared/types.js'
 import type { WaterfallProfilerSnapshot } from '../src/shared/trace.js'
 
@@ -81,10 +82,17 @@ const profiler: WaterfallProfilerSnapshot = {
   ],
 }
 
+const experiment: WaterfallExperimentStatus = {
+  generatedAt: 105,
+  instrumentation: 'disabled',
+  owner: { kind: 'none' },
+}
+
 function createQuery(): RuntimeDiagnosticsQuery {
   return new RuntimeDiagnosticsQuery({
     snapshot: () => structuredClone(observer),
     profilerSnapshot: () => structuredClone(profiler),
+    waterfallExperimentStatus: () => structuredClone(experiment),
   })
 }
 
@@ -101,6 +109,10 @@ describe('RuntimeDiagnosticsQuery', () => {
         traces: { bounded: true, retained: 3 },
       },
     })
+  })
+
+  it('returns factual read-only experiment ownership from the Host source', () => {
+    expect(createQuery().waterfallExperimentStatus()).toEqual(experiment)
   })
 
   it('inspects one live event and distinguishes historical owner references', () => {
