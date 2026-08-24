@@ -78,3 +78,22 @@ export type {
   WaterfallProfilerSnapshot,
   WaterfallTraceOutcome,
 } from './shared/trace.js'
+export { RUNTIME_CHECKPOINT_SCHEMA_VERSION } from './shared/verification.js'
+export type {
+  RuntimeCheckpoint,
+  RuntimeCheckpointCaptureInput,
+  RuntimeCheckpointCompareInput,
+  RuntimeCheckpointComparison,
+  RuntimeCheckpointEffect,
+  RuntimeCheckpointEvent,
+  RuntimeCheckpointFiber,
+  RuntimeCheckpointFiberRef,
+  RuntimeCheckpointListener,
+  RuntimeCheckpointSchemaVersion,
+  RuntimeCheckpointScope,
+  RuntimeEventComparison,
+  RuntimeFiberGroupComparison,
+  RuntimeFiberSemanticDescriptor,
+  RuntimeListenerGroupComparison,
+  RuntimeListenerSemanticDescriptor,
+} from './shared/verification.js'
