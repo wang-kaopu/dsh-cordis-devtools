@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Upload resolved lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolved-pnpm-lock
+          path: pnpm-lock.yaml
+
       - name: Verify repository policy
         run: pnpm verify:policy
 
