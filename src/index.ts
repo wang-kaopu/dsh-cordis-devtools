@@ -61,6 +61,25 @@ export type {
   RuntimeProfilerTraceSearchInput,
   RuntimeProfilerTraceSearchResult,
 } from './shared/diagnostics.js'
+export {
+  DEFAULT_WATERFALL_EXPERIMENT_TTL_MS,
+  MAX_WATERFALL_EXPERIMENT_TTL_MS,
+} from './shared/experiments.js'
+export type {
+  WaterfallControlOwner,
+  WaterfallExperimentEndReason,
+  WaterfallExperimentId,
+  WaterfallExperimentLease,
+  WaterfallExperimentLeaseId,
+  WaterfallExperimentSource,
+  WaterfallExperimentStartInput,
+  WaterfallExperimentStartOutcome,
+  WaterfallExperimentStartResult,
+  WaterfallExperimentStatus,
+  WaterfallExperimentStopInput,
+  WaterfallExperimentStopOutcome,
+  WaterfallExperimentStopResult,
+} from './shared/experiments.js'
 export type {
   CordisDevtoolsService,
   DevtoolsSnapshot,
