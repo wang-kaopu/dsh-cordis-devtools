@@ -12,6 +12,9 @@ export interface ProfilerPort {
   setEnabled(enabled: boolean, signal?: AbortSignal): Promise<WaterfallProfilerSnapshot>
 }
 
+const instrumentationStates = new Set(['disabled', 'enabled', 'conflict', 'unsupported'])
+const outcomes = new Set(['running', 'returned', 'threw', 'pending', 'fulfilled', 'rejected'])
+
 export function createProfilerPort(connection: ClientConnectionLike): ProfilerPort {
   const call = async (endpoint: string, signal?: AbortSignal): Promise<WaterfallProfilerSnapshot> => {
     const result = await connection.rpc.call(
@@ -39,9 +42,12 @@ export function createProfilerPort(connection: ClientConnectionLike): ProfilerPo
 }
 
 function isProfilerSnapshot(value: unknown): value is WaterfallProfilerSnapshot {
-  if (!isRecord(value) || typeof value.generatedAt !== 'number') return false
-  if (!['disabled', 'enabled', 'conflict', 'unsupported'].includes(String(value.instrumentation))) return false
-  return Array.isArray(value.traces) && value.traces.every(isTrace)
+  return isRecord(value)
+    && typeof value.generatedAt === 'number'
+    && typeof value.instrumentation === 'string'
+    && instrumentationStates.has(value.instrumentation)
+    && Array.isArray(value.traces)
+    && value.traces.every(isTrace)
 }
 
 function isTrace(value: unknown): value is WaterfallDispatchTrace {
@@ -53,8 +59,37 @@ function isTrace(value: unknown): value is WaterfallDispatchTrace {
     && typeof value.startedAt === 'number'
     && nullableNumber(value.returnedAt)
     && nullableNumber(value.settledAt)
-    && typeof value.outcome === 'string'
+    && isOutcome(value.outcome)
     && Array.isArray(value.listeners)
+    && value.listeners.every(listener =>
+      isRecord(listener)
+      && typeof listener.id === 'string'
+      && typeof listener.listenerId === 'string'
+      && (listener.owner === null || isFiber(listener.owner))
+      && typeof listener.order === 'number'
+      && typeof listener.enteredAt === 'number'
+      && nullableNumber(listener.returnedAt)
+      && nullableNumber(listener.settledAt)
+      && isOutcome(listener.outcome)
+      && Array.isArray(listener.nextCalls)
+      && listener.nextCalls.every(call =>
+        isRecord(call)
+        && typeof call.id === 'number'
+        && typeof call.calledAt === 'number'
+        && nullableNumber(call.returnedAt)
+        && nullableNumber(call.settledAt)
+        && isOutcome(call.outcome)))
+}
+
+function isFiber(value: unknown): boolean {
+  return isRecord(value)
+    && (value.uid === null || typeof value.uid === 'number')
+    && typeof value.name === 'string'
+    && typeof value.state === 'string'
+}
+
+function isOutcome(value: unknown): boolean {
+  return typeof value === 'string' && outcomes.has(value)
 }
 
 function nullableNumber(value: unknown): boolean {
