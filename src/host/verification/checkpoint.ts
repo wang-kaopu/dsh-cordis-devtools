@@ -128,8 +128,8 @@ function compareListeners(
   b: RuntimeCheckpoint['listeners'][number],
 ): number {
   return a.event.localeCompare(b.event)
-    || (a.owner?.name ?? '').localeCompare(b.owner?.name ?? '')
     || a.order - b.order
+    || (a.owner?.name ?? '').localeCompare(b.owner?.name ?? '')
     || Number(a.prepend) - Number(b.prepend)
     || Number(a.global) - Number(b.global)
     || a.id - b.id
