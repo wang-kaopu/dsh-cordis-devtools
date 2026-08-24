@@ -4,6 +4,7 @@ import {
   CORDIS_RUNTIME_INSPECT_PROVIDER_ID,
   createCordisRuntimeInspectProvider,
   installCordisRuntimeInspect,
+  type CordisRuntimeInspectProviderLike,
 } from '../src/host/cordis-inspect.js'
 import { RuntimeDiagnosticsQuery } from '../src/host/diagnostics.js'
 import type { DevtoolsSnapshot } from '../src/shared/types.js'
@@ -84,7 +85,7 @@ describe('CordisRuntime inspect provider', () => {
 
   it('keeps registration optional and lifecycle-owned behind the cordisInspect seam', () => {
     const dispose = vi.fn()
-    const register = vi.fn(() => dispose)
+    const register = vi.fn((_provider: CordisRuntimeInspectProviderLike) => dispose)
     const effect = vi.fn((factory: () => () => void) => factory())
     const child = {
       get: vi.fn(() => ({ register })),
@@ -97,7 +98,7 @@ describe('CordisRuntime inspect provider', () => {
 
     expect(inject).toHaveBeenCalledWith(['cordisInspect'], expect.any(Function))
     expect(register).toHaveBeenCalledTimes(1)
-    expect(register.mock.calls[0][0].manifest.id).toBe('CordisRuntime')
+    expect(register.mock.calls[0]?.[0].manifest.id).toBe('CordisRuntime')
     expect(effect).toHaveBeenCalledTimes(1)
   })
 
