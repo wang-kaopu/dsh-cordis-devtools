@@ -23,7 +23,7 @@ export const DEFAULT_MCP_PORT = 43127
 export const MCP_PATH = '/mcp'
 
 const MAX_BODY_BYTES = 1024 * 1024
-const MCP_SERVER_INFO = { name: 'dsh-cordis-devtools', version: '0.5.0' } as const
+const MCP_SERVER_INFO = { name: 'dsh-cordis-devtools', version: '0.6.0' } as const
 
 export interface McpWaterfallExperimentControl {
   status(): WaterfallExperimentStatus
