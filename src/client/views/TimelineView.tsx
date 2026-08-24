@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { DisclosureRow, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DispatchRecord } from '../../shared/types.js'
+import detailCss from '../DetailList.module.css'
 import css from '../DevtoolsPanel.module.css'
 
 export interface TimelineViewProps {
@@ -49,7 +50,7 @@ export function TimelineView({
                     </span>
                   )}
                 >
-                  <dl className={css.timelineDetails}>
+                  <dl className={detailCss.timelineDetails}>
                     <Detail label="dispatch id" value={String(record.id)} />
                     <Detail label="mode" value={String(record.mode)} />
                     <Detail label="arguments" value={String(record.argCount)} />
@@ -60,7 +61,7 @@ export function TimelineView({
                         ? 'unknown'
                         : contextIsLive && context.uid !== null
                           ? (
-                              <span className={css.detailPills}>
+                              <span className={detailCss.detailPills}>
                                 <Pill onClick={() => { onOpenFiber(context.uid as number) }}>{context.name}</Pill>
                                 <span>uid {context.uid} · {context.state}</span>
                               </span>
