@@ -1,13 +1,22 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type {
+  WaterfallExperimentId,
+  WaterfallExperimentSource,
+  WaterfallExperimentStartInput,
+  WaterfallExperimentStartResult,
+  WaterfallExperimentStatus,
+  WaterfallExperimentStopInput,
+  WaterfallExperimentStopResult,
+} from '../shared/experiments.js'
 import type { CordisDevtoolsService, DevtoolsSnapshot } from '../shared/types.js'
 import type {
-  WaterfallInstrumentationState,
   WaterfallProfilerService,
   WaterfallProfilerSnapshot,
 } from '../shared/trace.js'
 import { ObserverCollector } from './collector.js'
 import { RuntimeDiagnosticsQuery } from './diagnostics.js'
 import { WaterfallInstrumentationController } from './instrumentation/waterfall-controller.js'
+import { WaterfallExperimentCoordinator } from './instrumentation/waterfall-experiment-coordinator.js'
 import { WaterfallTraceStore } from './trace-store.js'
 
 export interface DevtoolsServiceOptions {
@@ -19,6 +28,7 @@ export class DevtoolsService implements CordisDevtoolsService, WaterfallProfiler
   private readonly observer: ObserverCollector
   private readonly traces: WaterfallTraceStore
   private readonly instrumentation: WaterfallInstrumentationController
+  private readonly experiments: WaterfallExperimentCoordinator
   readonly diagnostics: RuntimeDiagnosticsQuery
 
   constructor(ctx: Context, options: DevtoolsServiceOptions = {}) {
@@ -28,7 +38,18 @@ export class DevtoolsService implements CordisDevtoolsService, WaterfallProfiler
     this.traces = new WaterfallTraceStore({
       maxTraces: options.maxTraces,
     })
-    this.instrumentation = new WaterfallInstrumentationController(ctx, this.traces)
+
+    // The controller owns trace creation while the coordinator owns mutation.
+    // The indirection avoids a second ownership flag while breaking the
+    // construction cycle: traces ask for the coordinator's current lease only
+    // after instrumentation has been acquired.
+    let resolveExperimentId: () => WaterfallExperimentId | undefined = () => undefined
+    this.instrumentation = new WaterfallInstrumentationController(ctx, this.traces, {
+      resolveExperimentId: () => resolveExperimentId(),
+    })
+    this.experiments = new WaterfallExperimentCoordinator(this.instrumentation)
+    resolveExperimentId = () => this.experiments.currentExperimentId()
+
     this.diagnostics = new RuntimeDiagnosticsQuery(this)
   }
 
@@ -44,23 +65,39 @@ export class DevtoolsService implements CordisDevtoolsService, WaterfallProfiler
     return this.observer.subscribe(listener)
   }
 
+  waterfallExperimentStatus(): WaterfallExperimentStatus {
+    return this.experiments.status()
+  }
+
+  startAgent(
+    source: WaterfallExperimentSource,
+    input: WaterfallExperimentStartInput = {},
+  ): WaterfallExperimentStartResult {
+    return this.experiments.startAgent(source, input)
+  }
+
+  stopAgent(input: WaterfallExperimentStopInput): WaterfallExperimentStopResult {
+    return this.experiments.stopAgent(input)
+  }
+
   profilerSnapshot(): WaterfallProfilerSnapshot {
+    const experiment = this.experiments.status()
     return {
-      generatedAt: Date.now(),
-      instrumentation: this.instrumentation.state as WaterfallInstrumentationState,
+      generatedAt: experiment.generatedAt,
+      instrumentation: experiment.instrumentation,
+      experiment,
       traces: [...this.traces.snapshot()],
     }
   }
 
+  /** Human control boundary used by the existing browser Profiler RPC. */
   setInstrumentationEnabled(enabled: boolean): WaterfallProfilerSnapshot {
-    if (enabled) this.instrumentation.enable()
-    else this.instrumentation.disable()
+    if (enabled) this.experiments.startHuman()
+    else this.experiments.forceStop()
     return this.profilerSnapshot()
   }
 
   dispose(): void {
-    if (this.instrumentation.state === 'enabled') {
-      this.instrumentation.disable()
-    }
+    this.experiments.dispose()
   }
 }

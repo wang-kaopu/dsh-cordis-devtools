@@ -44,16 +44,32 @@ function diagnostics(): RuntimeDiagnosticsQuery {
   const profiler: WaterfallProfilerSnapshot = {
     generatedAt: 11,
     instrumentation: 'disabled',
-    traces: [],
+    traces: [{
+      version: 1,
+      id: 'trace-demo',
+      mode: 'waterfall',
+      event: 'demo/event',
+      experimentId: 'lease-demo',
+      startedAt: 1,
+      returnedAt: 2,
+      settledAt: 2,
+      outcome: 'returned',
+      listeners: [],
+    }],
   }
   return new RuntimeDiagnosticsQuery({
     snapshot: () => structuredClone(observer),
     profilerSnapshot: () => structuredClone(profiler),
+    waterfallExperimentStatus: () => ({
+      generatedAt: 12,
+      instrumentation: 'disabled',
+      owner: { kind: 'none' },
+    }),
   })
 }
 
 describe('CordisRuntime inspect provider', () => {
-  it('declares seven read-only methods and delegates to RuntimeDiagnosticsQuery', async () => {
+  it('declares eight read-only methods and delegates to RuntimeDiagnosticsQuery', async () => {
     const provider = createCordisRuntimeInspectProvider(diagnostics())
 
     expect(provider.manifest.id).toBe(CORDIS_RUNTIME_INSPECT_PROVIDER_ID)
@@ -63,6 +79,7 @@ describe('CordisRuntime inspect provider', () => {
       'inspectFiber',
       'searchDispatches',
       'profilerTraces',
+      'waterfallExperimentStatus',
       'captureCheckpoint',
       'compareCurrent',
     ])
@@ -80,9 +97,14 @@ describe('CordisRuntime inspect provider', () => {
       records: [{ id: 1 }],
       window: { bounded: true },
     })
-    await expect(provider.query('profilerTraces', {})).resolves.toMatchObject({
+    await expect(provider.query('profilerTraces', { experimentId: 'lease-demo' })).resolves.toMatchObject({
       instrumentation: 'disabled',
-      traces: [],
+      traces: [{ id: 'trace-demo', experimentId: 'lease-demo' }],
+      window: { bounded: true, matched: 1 },
+    })
+    await expect(provider.query('waterfallExperimentStatus', {})).resolves.toMatchObject({
+      instrumentation: 'disabled',
+      owner: { kind: 'none' },
     })
 
     const baseline = await provider.query('captureCheckpoint', {
