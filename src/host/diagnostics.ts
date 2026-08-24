@@ -68,16 +68,16 @@ export class RuntimeDiagnosticsQuery {
   }
 
   inspectFiber(selector: RuntimeFiberSelector): RuntimeFiberInspection {
-    validateFiberSelector(selector)
+    const normalized = normalizeFiberSelector(selector)
     const snapshot = this.source.snapshot()
     const matches = snapshot.fibers
-      .filter(fiber => 'uid' in selector ? fiber.uid === selector.uid : fiber.name === selector.name)
+      .filter(fiber => normalized.uid !== undefined ? fiber.uid === normalized.uid : fiber.name === normalized.name)
       .map(fiber => this.describeFiber(snapshot, fiber))
       .sort((a, b) => a.uid - b.uid)
 
     return {
       generatedAt: snapshot.generatedAt,
-      selector: 'uid' in selector ? { uid: selector.uid } : { name: selector.name },
+      selector: normalized,
       matches,
     }
   }
@@ -161,14 +161,18 @@ function cloneEffect(effect: DevtoolsSnapshot['fibers'][number]['effects'][numbe
   }
 }
 
-function validateFiberSelector(selector: RuntimeFiberSelector): void {
-  const hasUid = 'uid' in selector && selector.uid !== undefined
-  const hasName = 'name' in selector && selector.name !== undefined
-  if (hasUid === hasName) throw new TypeError('inspectFiber requires exactly one of uid or name')
-  if (hasUid && (!Number.isInteger(selector.uid) || selector.uid < 0)) {
-    throw new RangeError('fiber uid must be a non-negative integer')
+function normalizeFiberSelector(selector: RuntimeFiberSelector): RuntimeFiberSelector {
+  const uid = selector.uid
+  const name = selector.name
+  if ((uid === undefined) === (name === undefined)) {
+    throw new TypeError('inspectFiber requires exactly one of uid or name')
   }
-  if (hasName && selector.name.trim() === '') throw new TypeError('fiber name must not be empty')
+  if (uid !== undefined) {
+    if (!Number.isInteger(uid) || uid < 0) throw new RangeError('fiber uid must be a non-negative integer')
+    return { uid }
+  }
+  if (name === undefined || name.trim() === '') throw new TypeError('fiber name must not be empty')
+  return { name }
 }
 
 function normalizeLimit(limit: number | undefined): number {
