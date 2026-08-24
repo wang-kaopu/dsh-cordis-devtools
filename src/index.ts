@@ -7,11 +7,20 @@ import { DevtoolsService } from './host/service.js'
 export const name = 'dsh-cordis-devtools'
 export const provide = 'cordisDevtools'
 
+export interface McpExperimentConfig {
+  /** Expose authenticated start/stop mutation tools. Default false. */
+  enabled?: boolean
+}
+
 export interface McpConfig {
-  /** Expose read-only runtime diagnostics to external MCP clients. Default false. */
+  /** Expose runtime diagnostics to external MCP clients. Default false. */
   enabled?: boolean
   /** Loopback TCP port. Default 43127. Use 0 only for programmatic ephemeral-port tests. */
   port?: number
+  /** Optional bearer token. When configured, every MCP request requires it. */
+  token?: string
+  /** Optional controlled waterfall experiment capability. Mutation stays hidden unless explicitly enabled. */
+  experiments?: McpExperimentConfig
   /** Reject plugin activation if the MCP listener cannot start. Default false. */
   failOnStartupError?: boolean
 }
@@ -42,7 +51,15 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   if (config.mcp?.enabled === true) {
     await installEmbeddedMcpServer(ctx, service.diagnostics, {
       port: config.mcp.port ?? DEFAULT_MCP_PORT,
+      token: config.mcp.token,
       failOnStartupError: config.mcp.failOnStartupError ?? false,
+      experiments: {
+        enabled: config.mcp.experiments?.enabled ?? false,
+        // Supplying control makes read-only experiment status available even
+        // when mutation capability remains disabled. start/stop stay hidden
+        // unless the explicit capability + bearer-token requirements pass.
+        control: service,
+      },
     })
   }
 }
