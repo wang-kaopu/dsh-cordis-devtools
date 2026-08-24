@@ -6,6 +6,7 @@ import type {
   WaterfallProfilerSnapshot,
 } from '../shared/trace.js'
 import { ObserverCollector } from './collector.js'
+import { RuntimeDiagnosticsQuery } from './diagnostics.js'
 import { WaterfallInstrumentationController } from './instrumentation/waterfall-controller.js'
 import { WaterfallTraceStore } from './trace-store.js'
 
@@ -18,6 +19,7 @@ export class DevtoolsService implements CordisDevtoolsService, WaterfallProfiler
   private readonly observer: ObserverCollector
   private readonly traces: WaterfallTraceStore
   private readonly instrumentation: WaterfallInstrumentationController
+  readonly diagnostics: RuntimeDiagnosticsQuery
 
   constructor(ctx: Context, options: DevtoolsServiceOptions = {}) {
     this.observer = new ObserverCollector(ctx, {
@@ -27,6 +29,7 @@ export class DevtoolsService implements CordisDevtoolsService, WaterfallProfiler
       maxTraces: options.maxTraces,
     })
     this.instrumentation = new WaterfallInstrumentationController(ctx, this.traces)
+    this.diagnostics = new RuntimeDiagnosticsQuery(this)
   }
 
   snapshot(): DevtoolsSnapshot {
