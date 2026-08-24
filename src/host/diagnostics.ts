@@ -9,6 +9,7 @@ import type {
   RuntimeProfilerTraceSearchInput,
   RuntimeProfilerTraceSearchResult,
 } from '../shared/diagnostics.js'
+import type { WaterfallExperimentStatus } from '../shared/experiments.js'
 import type { DevtoolsSnapshot } from '../shared/types.js'
 import type { WaterfallProfilerSnapshot } from '../shared/trace.js'
 import {
@@ -30,6 +31,8 @@ const MAX_LIMIT = 100
 export interface RuntimeDiagnosticsSource {
   snapshot(): DevtoolsSnapshot
   profilerSnapshot(): WaterfallProfilerSnapshot
+  /** v0.6+ Host ownership facts; optional keeps pure v0.4/v0.5 fixtures usable. */
+  waterfallExperimentStatus?(): WaterfallExperimentStatus
 }
 
 export class RuntimeDiagnosticsQuery {
@@ -55,6 +58,18 @@ export class RuntimeDiagnosticsQuery {
           retained: profiler.traces.length,
         },
       },
+    }
+  }
+
+  waterfallExperimentStatus(): WaterfallExperimentStatus {
+    const status = this.source.waterfallExperimentStatus?.()
+    if (status === undefined) {
+      throw new Error('waterfall experiment status is unavailable from this diagnostics source')
+    }
+    return {
+      generatedAt: status.generatedAt,
+      instrumentation: status.instrumentation,
+      owner: { ...status.owner },
     }
   }
 
