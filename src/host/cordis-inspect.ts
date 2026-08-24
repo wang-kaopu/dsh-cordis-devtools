@@ -69,6 +69,7 @@ const PROFILER_INPUT = {
   type: 'object',
   properties: {
     event: { type: 'string', description: 'Exact waterfall event name filter.' },
+    experimentId: { type: 'string', description: 'Exact Agent experiment lease id filter.' },
     limit: { type: 'number', description: 'Maximum returned traces, 1 through 100.' },
   },
   additionalProperties: false,
@@ -107,13 +108,14 @@ export function createCordisRuntimeInspectProvider(
     manifest: {
       id: CORDIS_RUNTIME_INSPECT_PROVIDER_ID,
       description:
-        'Live Cordis runtime diagnostics and read-only before/after verification: listeners, authoritative Fibers, bounded recent dispatches, existing waterfall traces, and semantic checkpoints.',
+        'Live Cordis runtime diagnostics and read-only before/after verification: listeners, authoritative Fibers, bounded recent dispatches, existing waterfall traces, controlled experiment ownership, and semantic checkpoints.',
       methods: [
         method('runtimeSummary', 'Return compact counts and bounded evidence-window metadata.', EMPTY_INPUT),
         method('inspectEvent', 'Inspect current live listener registrations for one exact event.', EVENT_INPUT),
         method('inspectFiber', 'Inspect one uid or all live Fibers with one exact name.', FIBER_INPUT),
         method('searchDispatches', 'Search the retained bounded observer dispatch window.', DISPATCH_INPUT),
         method('profilerTraces', 'Read existing retained waterfall profiler traces without enabling instrumentation.', PROFILER_INPUT),
+        method('waterfallExperimentStatus', 'Read current waterfall instrumentation ownership and finite Agent lease facts.', EMPTY_INPUT),
         method('captureCheckpoint', 'Capture a self-contained authoritative runtime topology checkpoint.', CHECKPOINT_INPUT),
         method('compareCurrent', 'Compare a caller-owned baseline checkpoint with fresh current runtime topology.', COMPARE_INPUT),
       ],
@@ -152,12 +154,17 @@ export function createCordisRuntimeInspectProvider(
         case 'profilerTraces': {
           const row = readObject(input)
           const event = readString(row, 'event')
+          const experimentId = readString(row, 'experimentId')
           const limit = readNumber(row, 'limit')
           return diagnostics.profilerTraces({
             ...(event === undefined ? {} : { event }),
+            ...(experimentId === undefined ? {} : { experimentId }),
             ...(limit === undefined ? {} : { limit }),
           })
         }
+        case 'waterfallExperimentStatus':
+          readObject(input)
+          return diagnostics.waterfallExperimentStatus()
         case 'captureCheckpoint': {
           const row = readObject(input)
           const scope = row.scope === undefined ? undefined : readCheckpointScope(row.scope)
