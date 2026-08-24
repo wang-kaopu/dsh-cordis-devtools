@@ -2,105 +2,74 @@
 
 ## Purpose
 
-`dsh-cordis-devtools` exposes one Cordis runtime through three deliberately separated diagnostic surfaces:
+`dsh-cordis-devtools` exposes one live Cordis runtime through four deliberately separated layers:
 
-1. a **default observer path** that reads facts Cordis already exposes without changing target dispatch behavior;
-2. a **read-only Agent diagnostics / verification path** that performs targeted queries and before/after semantic comparison over those observer facts;
-3. an **explicit opt-in waterfall instrumentation path** that measures listener/continuation execution only while profiling is enabled by a human DevTools action.
+1. **Observer** — behavior-neutral current facts plus bounded dispatch history.
+2. **Runtime Diagnostics / Verification** — read-only targeted queries, caller-owned checkpoints, and semantic before/after diff.
+3. **Waterfall instrumentation** — explicit metadata-only per-listener/continuation measurement for waterfall dispatches.
+4. **Controlled Runtime Experiments** — the v0.6 authority/lifecycle layer that decides who may enable that instrumentation, for how long, and how it is safely stopped.
 
-These boundaries are architectural. Observer facts, semantic verification, and profiler facts have different guarantees and must not be blended into a stronger claim than their source supports.
+These layers have different evidence and side-effect guarantees. No adapter may upgrade a bounded observation into a complete-history claim or bypass the experiment authority layer to mutate the low-level controller.
 
 ## Runtime layers
 
 ```text
-Cordis runtime
-    │
-    ├──────────────── Observer path ───────────────────────────────┐
-    │                                                             │
-    │  ctx.events._hooks / ctx.registry / fiber.getEffects()      │
-    │  internal/dispatch / internal/plugin / internal/status      │
-    │                         │                                   │
-    │                         ▼                                   │
-    │              src/host/cordis-adapter.ts                     │
-    │                         │                                   │
-    │                         ▼                                   │
-    │                src/host/collector.ts                        │
-    │               authoritative live facts                      │
-    │               + bounded dispatch history                    │
-    │                                                             │
-    └──────── Explicit waterfall instrumentation ─────────────┐    │
-                                                              │    │
-                 src/host/instrumentation/                    │    │
-                    waterfall-controller.ts                   │    │
-                  instance-level dispatch seam                │    │
-                              │                               │    │
-                              ▼                               │    │
-                    src/host/trace-store.ts                   │    │
-                     bounded trace snapshots                  │    │
-                              │                               │    │
-                              └──────────────┬────────────────┘    │
-                                             ▼                     ▼
-                                      src/host/service.ts
-                                       DevtoolsService
-                                             │
-                  ┌──────────────────────────┴───────────────────────┐
-                  │                                                  │
-                  ▼                                                  ▼
-       browser observer/profiler RPC                    RuntimeDiagnosticsQuery
-          /cordis-devtools                              read-only targeted facts
-                  │                                                  │
-                  ▼                                                  ▼
-       Human Cordis DevTools                              Runtime Verification
- Events | Timeline | Fibers | Profiler              checkpoint projection + diff
-                                                                     │
-                                                        ┌────────────┴────────────┐
-                                                        ▼                         ▼
-                                              CordisRuntime Inspect          embedded MCP
-                                                   DSH Agent               external Agent
-                                                                        127.0.0.1 only
+                               Cordis runtime
+                                    │
+              ┌─────────────────────┴──────────────────────┐
+              │                                            │
+              ▼                                            ▼
+       ObserverCollector                     WaterfallInstrumentationController
+ current Event/Fiber facts                     low-level compatibility seam
+ + bounded dispatch history                              ▲
+              │                                           │
+              │                              mutation only through
+              │                                           │
+              │                           WaterfallExperimentCoordinator
+              │                            single Human/Agent owner
+              │                              ▲        ▲        ▲
+              │                              │        │        │
+              │                            Human     DSH      MCP
+              └──────────────────┐           │       tools    tools
+                                 ▼           │
+                          DevtoolsService ────┘
+                                 │
+                  ┌──────────────┴─────────────────┐
+                  │                                │
+                  ▼                                ▼
+         browser RPC / Profiler          RuntimeDiagnosticsQuery
+                  │                       read-only facts/status
+                  ▼                                │
+          Cordis DevTools Web                      ▼
+ Events | Timeline | Fibers | Profiler     Runtime Verification
+                                               checkpoint + diff
+                                                  /        \
+                                                 ▼          ▼
+                                         CordisRuntime     MCP
+                                         Inspect Provider  loopback
 ```
 
-The browser, DSH Cordis Inspect, and MCP are adapters over Host-owned facts. None of them is a second runtime source of truth.
+The browser, DSH Cordis Inspect, DSH experiment tools, and MCP are adapters around Host-owned state. None is a second runtime source of truth.
 
 ## Observer compatibility boundary
 
-`src/host/cordis-adapter.ts` is the narrow boundary for direct listener-registry and live-Fiber implementation details. Downstream observer, Agent, and UI code consume project-owned snapshots rather than `_hooks` or raw Fiber internals.
+`src/host/cordis-adapter.ts` isolates direct Cordis listener/Fiber implementation access. Downstream code consumes project-owned snapshots instead of raw `_hooks` or Fiber internals.
 
-The adapter owns:
+The observer projects:
 
-- listener enumeration/order/owner metadata from the current Cordis hook registry;
-- compact Fiber references;
-- authoritative live Fiber inventory from `ctx.registry.values()` / runtime Fibers;
-- normalization of known Fiber lifecycle states;
-- `fiber.getEffects()` projection to recursive `EffectSnapshot { label, children }` metadata only.
+- current listener registrations/order/owner metadata;
+- authoritative live Fiber inventory from `ctx.registry`;
+- parent/inject/owned-event relationships;
+- `fiber.getEffects()` as metadata-only `{ label, children }` trees;
+- bounded pre-execution dispatch occurrence records.
 
-No raw disposer/function/config/arguments/stacks are copied from Effects.
+Observer mode never wraps target listener callbacks, never replaces Cordis `waterfall()`, and never patches dispatch.
 
-## Observer collector
+`internal/dispatch` occurs before public listeners run, so observer records do not claim generic completion, actual executed listener identity, per-listener duration, `next()` behavior, or chain-stop attribution.
 
-`ObserverCollector` owns observer state and listens to Cordis lifecycle/dispatch invalidation signals.
+## Runtime Diagnostics and Verification
 
-`DispatchRecord` is intentionally a **pre-execution occurrence record**. It contains:
-
-- runtime-local id;
-- timestamp;
-- invocation mode;
-- event name;
-- argument count;
-- raw registered-listener count;
-- known dispatch-context Fiber metadata.
-
-It does not claim generic completion, executed-listener identity, listener duration, waterfall `next()` behavior, or chain-stop semantics.
-
-The dispatch ring buffer is bounded. `internal/listener` invalidation is deferred because Cordis emits it before the Hook is stored; `internal/plugin` invalidation is deferred/coalesced so a disposing Fiber has left authoritative live inventory before subscribers refresh.
-
-Observer mode never wraps target listener callbacks and never replaces Cordis `waterfall()` or its continuations.
-
-## Runtime Diagnostics Query
-
-`src/host/diagnostics.ts` provides transport-neutral targeted reads over facts already owned by `DevtoolsService`.
-
-The v0.5 query surface is:
+`src/host/diagnostics.ts` is the transport-neutral targeted query layer. The read surface includes:
 
 ```text
 runtimeSummary
@@ -110,293 +79,194 @@ searchDispatches
 profilerTraces
 captureCheckpoint
 compareCurrent
+waterfallExperimentStatus
 ```
 
-The first five are v0.4 targeted reads. The last two compose the v0.5 Runtime Verification layer.
+`profilerTraces` reads already-retained traces and may exact-filter by `experimentId`; it does not enable instrumentation.
 
-The query layer does not independently traverse Cordis internals. DSH Cordis Inspect and MCP delegate to it rather than rebuilding listener/Fiber semantics in each adapter.
+Runtime Verification remains read-only. A checkpoint is a caller-owned, versioned, canonical JSON value containing authoritative current Event/Listener/live-Fiber topology and metadata-only Effects. Bounded dispatch history and profiler traces are excluded from checkpoints.
 
-## Runtime Verification
+Cross-checkpoint semantic identity deliberately excludes runtime-local listener ids, Fiber/owner uids, and listener registration order. Listener groups use event + owner name + `prepend` + `global`; Fiber groups use canonical live metadata. Equivalent duplicates are compared as multisets, allowing mechanical changes such as `2 → 1` without inventing cross-reload object pairing.
 
-### Boundary
+`compareCurrent` validates the baseline, recaptures the same scope, and reports mechanical changes. It does not emit `fixed`, `rootCause`, or confidence.
 
-Runtime Verification is read-only with respect to the target Cordis runtime. It does not:
+## Controlled Runtime Experiments
 
-- reload plugins;
-- add/remove listener registrations;
-- enable waterfall instrumentation;
-- persist server-side checkpoint state;
-- return root-cause/fix/confidence verdicts.
+### Single mutation owner
 
-It consumes a fresh `DevtoolsSnapshot`, projects a canonical checkpoint, and mechanically compares current topology with a caller-supplied baseline.
+`src/host/instrumentation/waterfall-experiment-coordinator.ts` owns every production route that can mutate waterfall instrumentation.
 
-### Shared contract
+The low-level `WaterfallInstrumentationController` remains the Cordis compatibility seam, but Human RPC, DSH tools, and MCP tools do not call its enable/disable methods directly.
 
-`src/shared/verification.ts` owns the serializable v1 checkpoint/diff contract.
-
-`src/host/verification/checkpoint.ts` owns checkpoint projection and digest generation. `src/host/verification/diff.ts` owns semantic multiset comparison.
-
-A checkpoint is caller-owned:
+Canonical owner states are factual:
 
 ```text
-captureCheckpoint(scope?)
-        ↓
-serializable RuntimeCheckpoint
-        ↓
-caller keeps baseline
-        ↓
-compareCurrent({ baseline })
+disabled + none
+enabled  + human
+enabled  + agent { leaseId, source: dsh|mcp, startedAt, expiresAt }
+conflict
+unsupported
 ```
 
-The Host does not allocate checkpoint ids, TTLs, history buffers, or per-Agent ownership state.
+Only one owner exists at a time.
 
-### Checkpoint topology
+### Human ownership
 
-A checkpoint contains authoritative current topology:
+The browser Profiler acquires/relinquishes Human ownership through the coordinator. When an Agent lease is active, the UI identifies the Agent source/expiry and exposes a Human emergency stop rather than a normal Human-owned toggle.
 
-- Events and current listener multiplicity;
-- current listeners with capture-local registration metadata;
-- authoritative live Fibers;
-- parent/inject/owned-event metadata;
-- metadata-only Effect structure.
+Human emergency stop may always reduce instrumentation. Human enable does not steal an Agent lease, and an Agent cannot steal Human ownership.
 
-Bounded dispatch history and profiler traces are excluded because they are retained occurrence history, not authoritative current topology.
+### Agent lease lifecycle
 
-Checkpoint scope supports exact Event/Fiber names with deterministic union + one-hop relationship closure. Normalized scope is stored in the checkpoint and reused by `compareCurrent`.
-
-### Canonicalization and digest
-
-Checkpoint arrays and metadata are canonicalized before hashing. The v1 digest is SHA-256 over the canonical body and is validated before comparison.
-
-The digest protects checkpoint integrity/equality. It is not an object-identity mechanism.
-
-### Cross-checkpoint identity
-
-Runtime-local ids are evidence inside one capture, not stable identity across captures.
-
-Listener semantic grouping uses:
+Agent leases are finite:
 
 ```text
-event
-owner Fiber name / no owner
-prepend
-global
+defaultTtlMs = 15000
+maxTtlMs = 60000
 ```
 
-It deliberately excludes:
+There is no infinite lease, renewal, or simultaneous lease support in v0.6.
+
+Start from an occupied/unsupported/conflicting state performs no mutation and returns factual status. Stop requires the exact active `leaseId`. Expiry also rechecks exact ownership before disabling. Stale stop/timeout callbacks cannot disable a later owner.
+
+Plugin disposal clears timers and performs only owner-safe cleanup. If another component replaced the dispatch seam, cleanup preserves `conflict` instead of overwriting the foreign patch.
+
+### Trace association
+
+A waterfall trace created while an Agent lease owns instrumentation receives optional:
 
 ```text
-listener id
-owner Fiber uid
-registration order
+experimentId = leaseId
 ```
 
-Registration `order` stays in the checkpoint as a factual capture-local property, but equivalent duplicate registrations naturally have different runtime order positions. Including it in the semantic key would split a duplicate topology into unrelated `1`-count rows rather than the required multiplicity `2 → 1`.
+Human traces remain untagged. Late settlement and late/repeated `next()` facts remain associated with the trace that originally observed them.
 
-Fiber semantic grouping excludes Fiber uid and uses canonical factual metadata including name, state, parent name, sorted inject names, sorted owned events, and canonical metadata-only Effect structure.
+Trace storage remains bounded and upserted; `experimentId` filtering is not a lossless experiment log.
 
-Equal semantic descriptors are compared as multisets. The diff does not arbitrarily pair runtime objects.
+## DSH adapters
 
-### Result semantics
+### Cordis Inspect remains read-only
 
-`compareCurrent`:
+`src/host/cordis-inspect.ts` registers the `CordisRuntime` Host Provider when the DSH `cordisInspect` service exists. DSH's existing `cordis_inspect_list` / `cordis_inspect_query` tools discover and invoke it.
 
-1. validates baseline schema/digest;
-2. captures fresh current state with the baseline scope;
-3. compares Event counts and Listener/Fiber semantic multisets;
-4. returns the current checkpoint plus changed groups.
+The Provider exposes runtime facts, verification operations, and read-only experiment status. It does not expose experiment mutation.
 
-An unchanged comparison means only that authoritative checkpoint topology is semantically equal for that scope. It does not prove that every behavioral bug is fixed.
+### Dedicated experiment tools
 
-## Agent adapters
+`src/host/dsh-experiments.ts` registers:
 
-### DSH Cordis Inspect
+```text
+cordis_start_waterfall_experiment
+cordis_stop_waterfall_experiment
+```
 
-When DSH provides the first-party `cordisInspect` registry, `src/host/cordis-inspect.ts` registers a `CordisRuntime` Provider.
+The start body obtains one-shot authority through the shipped DSH `ctx.approval` service **before coordinator mutation**. Only `allowed-once` proceeds. Missing Agent/service, rejection, cancellation, or unavailable answerer fail closed.
 
-DSH Agents use the existing `cordis_inspect_list` / `cordis_inspect_query` model tools. This package does not register a parallel package-specific model-tool family and does not route DSH through MCP.
+The mandatory gate lives in the tool body rather than solely in `tools/pre-execute`, whose extensible listener order cannot be trusted as the package's only mutation guard.
 
-### External MCP
+Stop requires the exact lease id and does not ask again because it only reduces instrumentation.
 
-`src/host/mcp.ts` optionally hosts MCP Streamable HTTP at:
+## External MCP adapter
+
+`src/host/mcp.ts` optionally hosts Streamable HTTP at:
 
 ```text
 http://127.0.0.1:<port>/mcp
 ```
 
-The server is:
+Network exposure remains loopback-only and the server remains disabled by default.
 
-- disabled by default;
-- bound only to `127.0.0.1`;
-- read-only for current Agent diagnostics/verification tools;
-- lifecycle-owned by the plugin Fiber;
-- fail-open for the Human DevTools path by default when the MCP listener cannot bind, with optional explicit `failOnStartupError`.
+Backward-compatible read-only config exposes the original seven v0.5 tools. Controlled-experiment mutation appears only when the operator explicitly supplies a non-empty bearer token and enables the experiment capability.
 
-The seven MCP tools are thin adapters over `RuntimeDiagnosticsQuery`. MCP does not own a second checkpoint or diff implementation.
+When a token is configured, every MCP request authenticates before request-body dispatch. Token material is not logged or copied into runtime output.
 
-Loopback-only is a network exposure boundary, not a confidentiality boundary against untrusted local software running under the same machine/account.
+With experiments enabled, MCP adds read-only experiment status plus start/exact-stop tools. External MCP does not impersonate a DSH Agent or use DSH approval because it has no truthful DSH session identity.
 
-## Waterfall instrumentation boundary
+MCP bind failure remains isolated from the Human observer path by default; deployments may opt into `failOnStartupError`.
 
-### Why instrumentation is separate
+## Waterfall instrumentation compatibility seam
 
-`internal/dispatch` fires before public listeners execute. Per-listener entry/timing, `next()` calls, async settlement, and repeated/late continuations cannot be derived truthfully from observer metadata.
+Per-listener entry/timing and continuation facts cannot be derived from `internal/dispatch`, so the controller installs an instance-level `ctx.events.dispatch` adapter only while instrumentation is owned.
 
-Instrumentation is therefore explicit and separate from all Agent read-only operations.
+The design avoids:
 
-### Seam
+- mutating `_hooks[].callback`;
+- replacing native `EventsService.waterfall()` continuation semantics;
+- double-running Cordis context filters.
 
-`WaterfallInstrumentationController` installs an **instance-level `ctx.events.dispatch` adapter** while enabled.
+For non-waterfall modes, dispatch delegates to the saved original path. For waterfall mode, the compatibility branch mirrors validated Cordis selection/filter/bind behavior and creates dispatch-local wrapped callbacks.
 
-The design intentionally avoids:
-
-- replacing `_hooks[].callback`, which would threaten unregister/disposer identity;
-- replacing `EventsService.waterfall()`, whose native continuation behavior must remain authoritative;
-- calling original dispatch and then re-filtering Hooks, which would execute `Context.filter` twice.
-
-For non-waterfall modes the adapter delegates to the saved original dispatch path.
-
-For waterfall mode the compatibility branch mirrors the validated Cordis selection/filter/bind behavior and returns **dispatch-local wrapped callbacks**. `_hooks` remain untouched.
-
-### Listener and continuation semantics
-
-Each entered listener span records metadata around the real target callback. The wrapper is not `async`, so synchronous listeners are not Promise-normalized.
-
-It preserves:
-
-- synchronous return value identity/value;
-- the same thrown error object;
-- original Promise/thenable identity returned to Cordis/caller;
-- original callback order and `this` binding;
-- repeated `next()` behavior;
-- late `next()` behavior;
-- nested/reentrant waterfall as independent traces.
-
-The final continuation argument is replaced only by a transparent traced delegate. Every observed call gets its own record and delegates once to the original `next()`.
-
-The trace contract records continuation facts rather than publishing an irreversible `shortCircuit`/`veto` boolean. A listener can retain `next()` and call it after returning.
-
-### Async settlement limitation
-
-To observe Promise settlement timing while returning the original Promise/thenable object, instrumentation attaches side observation. This can affect host-level handled/unhandled bookkeeping even though caller-visible Promise identity, value/reason, and propagation are preserved by the parity suite.
-
-That trade-off exists only in explicitly enabled instrumented mode. Observer and Agent verification paths install no such observation.
-
-### Compatibility and fail-closed behavior
-
-Enable checks the expected Cordis runtime seam before patching. Disable restores the previous implementation only if DevTools still owns the installed wrapper.
-
-If another component replaces `dispatch` while instrumentation is enabled, DevTools does not overwrite it during cleanup. The controller exposes `conflict` and fails closed.
-
-Supported state is explicit:
-
-- `disabled` — default, no DevTools dispatch patch;
-- `enabled` — DevTools waterfall adapter owns the seam;
-- `conflict` — another runtime patch owns the seam;
-- `unsupported` — required compatibility assumptions are unavailable.
+Wrappers preserve synchronous return values, thrown error identity, original Promise/thenable identity, callback order/binding, repeated `next()`, late `next()`, and nested/reentrant waterfall behavior. Promise settlement is side-observed for timing and can affect host handled/unhandled bookkeeping; that limitation exists only in explicitly instrumented mode.
 
 The current compatibility target is validated Cordis 4.0.1 behavior.
 
-## Trace contract and storage
+## Privacy and evidence contracts
 
-`src/shared/trace.ts` exposes only profiling metadata:
+No current observer/checkpoint/trace contract transports:
 
-- trace/event timing facts and outcome;
-- ordered listener spans and owner references;
-- entered/returned/settled observations;
-- recorded `next()` calls and outcomes;
-- profiler instrumentation state.
+- raw event/listener arguments;
+- return values;
+- error objects/messages;
+- prompts or tool outputs;
+- file contents or plugin config;
+- credentials/bearer tokens;
+- raw Effect disposer/function references.
 
-It intentionally excludes raw listener arguments, return values, error objects/messages, prompts, tool results, file contents, plugin config, credentials, `selfTime`, and definitive chain-stop fields.
+The profiler does not invent `selfTime`, definitive `shortCircuit`/`veto`, root cause, confidence, or fix-success verdicts.
 
-`WaterfallTraceStore` keeps a bounded set of serializable snapshots. Writes are upserts because late settlement/continuation facts can extend an existing trace. It is not a persistent or lossless audit database.
+Bounded dispatch/trace windows report retained evidence only. Empty search results mean “not observed in the retained window,” not “never happened.”
 
-## Host service and browser transport
+## Lifecycle ownership
 
-`DevtoolsService` composes:
+`DevtoolsService` composes observer, trace store, low-level controller, coordinator, and Runtime Diagnostics Query. Browser RPC, DSH adapters, and MCP delegate to that service-owned state.
 
-- `ObserverCollector`;
-- `WaterfallTraceStore`;
-- `WaterfallInstrumentationController`;
-- one `RuntimeDiagnosticsQuery` over the service-owned facts.
-
-Browser observer/profiler RPC remains under `/cordis-devtools` with loopback authority. The observer snapshot never silently grows profiler traces or Agent checkpoint state.
-
-Profiler reads/control remain separate:
-
-```text
-profiler/snapshot
-instrumentation/enable
-instrumentation/disable
-```
-
-Plugin disposal attempts to disable a DevTools-owned instrumentation patch. Conflict semantics remain fail-closed.
+Lifecycle-owned resources include observer subscriptions, timers, MCP server, client pollers, Agent lease expiry, and instrumentation cleanup. Disposal unwinds through the coordinator rather than having each adapter guess low-level ownership.
 
 ## Client state
 
-### Observer store
+Observer and profiler stores remain separate. Opening the panel starts observer polling; opening Profiler performs a read-only profiler snapshot and starts its own polling only while the view is active.
 
-`EventExplorerStore` owns one latest observer snapshot plus loading/stale/error state. Opening the panel fetches immediately and starts one one-second poller. View switching and cross-navigation are local UI state and do not create additional observer pollers.
-
-### Profiler store
-
-`ProfilerStore` is independent and active only while the panel is open and the Profiler tab is selected.
-
-Opening Profiler performs a read-only snapshot. It never enables instrumentation automatically. Explicit enable/disable uses the Host-returned profiler snapshot and preserves the previous successful state as stale on failure.
-
-Switching away or closing the panel stops profiler polling and aborts the active profiler request.
-
-## Web UI boundary
-
-The shell contributes once to `sidebar.footer.action` and owns four views:
-
-- **Events** — current listener registry;
-- **Timeline** — bounded observer dispatch occurrence window;
-- **Fibers** — authoritative live Fiber/effect inventory;
-- **Profiler** — bounded opt-in waterfall execution traces.
-
-Cross-navigation uses live inventory as authority. Historical owner/context metadata remains readable but becomes non-navigable when its uid no longer exists in `DevtoolsSnapshot.fibers`.
+Human mutation is explicit. Agent-owned profiling is displayed as Agent-owned and cannot be confused with an ordinary Human session. Historical Fiber references remain readable but navigation requires the uid to still exist in authoritative live inventory.
 
 ## Core invariants
 
-1. **Observer mode is behavior-neutral.** Installing/opening/polling never wraps target listeners or patches waterfall dispatch.
-2. **Agent diagnostics and verification are read-only.** `captureCheckpoint` / `compareCurrent` observe current topology and never reload or instrument the target runtime.
-3. **Instrumentation is explicit.** Entering Profiler is read-only; only the human enable action installs the adapter in v0.5.
-4. **Unknown stays unknown.** Unsupported/incomplete facts are absent or described as current observations rather than fabricated conclusions.
-5. **Authoritative topology stays separate from bounded history.** Checkpoints contain current Event/Listener/Fiber topology, not retained dispatch/profiler windows.
-6. **Cross-checkpoint identity is semantic, not runtime-local.** id/uid/order fields remain evidence but are not silently promoted into stable identity.
-7. **Multiplicity is preserved.** Equivalent duplicate Listener/Fiber descriptors compare as counts such as `2 → 1`.
-8. **Metadata-first privacy.** Raw event/listener payloads, return values, error details, prompts, tool results, plugin config, file contents, credentials, and raw Effects do not cross current contracts.
-9. **Histories are bounded.** Observer dispatches and profiler traces have independent configured retention limits.
-10. **Lifecycle ownership is explicit.** Observers, channels, timers, MCP server, client pollers, and instrumentation cleanup belong to owning plugin/UI lifecycles.
-11. **Transport is not a second source of truth.** Browser, Cordis Inspect, and MCP delegate to Host-owned facts and shared transformations.
-12. **Live inventory stays live.** Historical Fiber references do not become authoritative current inventory.
-13. **Instrumentation fails closed.** Unsupported/conflicting runtime seams are surfaced instead of silently patched or forcibly restored.
-14. **Profiler timing stays factual.** The profiler exposes entered/returned/settled and `next()` observations, not undefined `selfTime` or irreversible chain-stop attribution.
+1. **Observer mode is behavior-neutral.** Installation/opening/polling does not patch target dispatch.
+2. **Diagnostics and Runtime Verification are read-only.** Checkpoint/diff/status operations never instrument or reload the runtime.
+3. **One coordinator owns mutation.** Human, DSH, and MCP do not maintain competing controller ownership.
+4. **Agent starts require truthful authority.** DSH uses one-shot approval; external MCP uses explicit authenticated operator capability.
+5. **Agent leases are finite and exact-owner checked.** Stale callers cannot disable later owners.
+6. **Human emergency stop is authoritative.** It may always reduce instrumentation.
+7. **Unknown stays unknown.** Unsupported/conflicting/incomplete facts are surfaced instead of fabricated conclusions.
+8. **Authoritative topology is separate from bounded history.** Checkpoints do not contain retained dispatch/trace windows.
+9. **Cross-checkpoint identity is semantic, not runtime-local.** id/uid/order remain capture evidence.
+10. **Multiplicity is preserved.** Equivalent duplicates compare as counts.
+11. **Metadata-first privacy is preserved.** Raw payload/credential data does not enter current contracts.
+12. **Transport is not a second source of truth.** Browser, Cordis Inspect, DSH tools, and MCP delegate to Host state.
+13. **Instrumentation fails closed.** Conflict/unsupported never force restoration of a foreign seam.
+14. **Trace attribution is factual, not complete-history proof.** `experimentId` identifies origin while retention stays bounded.
 
 ## Testing layers
 
-- Unit tests cover ring buffers, trace store, checkpoint canonicalization/digest, semantic diff, validators, and pure parity helpers.
-- Real `@deepseek-ai/cordis` integration tests cover listener/Fiber/effect behavior, lifecycle transitions, waterfall behavior, instrumentation lifecycle/conflicts, and bounded metadata-only traces.
-- Verification tests prove id/uid churn is not semantic identity and duplicate multiplicity is preserved; the final listener contract also proves registration `order` does not split equivalent duplicate groups.
-- DSH Cordis Inspect tests exercise the real registry/provider seam where practical.
-- MCP tests use the official SDK Client and require direct-query result parity.
-- The paired waterfall parity suite compares caller-visible behavior with instrumentation absent vs enabled.
-- `verify:client-bundle` executes the built client handoff through `window.__ModuleLoader__`.
-- The real DSH Web E2E installs the built/current checkout into a disposable profile, then proves in one process:
+- unit tests cover checkpoint/diff contracts, ring buffers, trace store, coordinator state machine, auth/capability validation, and client stores;
+- real Cordis tests cover listener/Fiber/effect behavior, instrumentation/parity, trace tagging, lifecycle/conflict, TTL/ownership races;
+- DSH adapter tests cover approval-first and fail-closed outcomes;
+- MCP tests use the official SDK Client and exact query/control delegation;
+- React/jsdom tests cover Agent owner presentation and Human emergency-stop interaction;
+- built-client verification executes the real bundle handoff;
+- `pnpm test:e2e:web` runs two disposable real DSH Web smokes:
 
 ```text
-DSH Cordis Inspect baseline
-external MCP baseline
+v0.5: DSH Cordis Inspect + external MCP Runtime Verification 2 → 1
         ↓
-real Cordis duplicate topology 2 → 1
-        ↓
-DSH compareCurrent
-MCP compareCurrent
-        ↓
-identical semantic Event / Listener / Fiber evidence
-        ↓
-Human DevTools UI + real waterfall Profiler remain healthy
+v0.6: real SessionStore/ToolRuntime/ApprovalService DSH experiment
+      + authenticated official MCP experiment
+      + exact experimentId traces
+      + stale-stop / TTL / Human emergency stop
+      + ordinary Human Profiler recovery
 ```
 
-E2E fixtures live under `e2e/fixtures` and are not included by the package `files` list, so they are not part of the production plugin runtime.
+The v0.6 fixture uses an authoritative live SessionStore session and real open turn. It intentionally does not mock away DSH session authority and requires no model/API key.
+
+## Deferred work
+
+Outside v0.6: automatic reload/orchestration, arbitrary event execution, generic listener/service/config mutation, persistent approvals, lease renewal/concurrency, remote MCP, payload capture, root-cause `diagnose()` verdicts, and non-waterfall profiling.
