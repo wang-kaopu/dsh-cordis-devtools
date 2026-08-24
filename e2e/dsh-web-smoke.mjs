@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { chromium } from 'playwright'
 
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2'
+const DUPLICATE_EVENT = 'cordis-devtools-e2e/duplicate-listener'
 const repoRoot = process.cwd()
 const probeRoot = join(repoRoot, 'e2e', 'fixtures', 'waterfall-probe')
 const agentDebuggingProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'agent-debugging-probe')
@@ -14,7 +17,10 @@ const inspectProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'cordis-inspect-probe
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-cordis-devtools-e2e-'))
 const port = await getFreePort()
+const mcpPort = await getFreePort()
 const baseUrl = `http://127.0.0.1:${port}`
+const mcpUrl = `http://127.0.0.1:${mcpPort}/mcp`
+const mcpPatch = join(dshHome, 'cordis-devtools-mcp.patch.yml')
 const env = {
   ...process.env,
   CI: '1',
@@ -23,6 +29,7 @@ const env = {
 
 let server
 let browser
+let mcpClient
 let serverOutput = ''
 
 try {
@@ -42,10 +49,19 @@ try {
     'dlx', DSH_PACKAGE,
     'plugin', '--profile', 'web', 'add', inspectProbeRoot,
   ], { env })
+  await writeFile(mcpPatch, [
+    '- id: dsh-cordis-devtools',
+    '  config:',
+    '    mcp:',
+    '      enabled: true',
+    `      port: ${mcpPort}`,
+    '',
+  ].join('\n'))
 
   server = spawn(pnpm, [
     'dlx', DSH_PACKAGE,
-    'web', '--no-open', '--host', '127.0.0.1', '--port', String(port),
+    'web', '--patch', mcpPatch,
+    '--no-open', '--host', '127.0.0.1', '--port', String(port),
   ], {
     cwd: repoRoot,
     env,
@@ -61,6 +77,30 @@ try {
 
   await waitForServer(baseUrl, server)
   await waitForOutput('[cordis-devtools-e2e] CordisRuntime duplicate-fiber inspect OK', server)
+  await waitForPort(mcpPort, server)
+
+  mcpClient = new Client({ name: 'dsh-cordis-devtools-real-dsh-e2e', version: '1.0.0' })
+  await mcpClient.connect(new StreamableHTTPClientTransport(new URL(mcpUrl)))
+  const mcpTools = await mcpClient.listTools()
+  assert.deepEqual(mcpTools.tools.map(tool => tool.name), [
+    'cordis_runtime_summary',
+    'cordis_inspect_event',
+    'cordis_inspect_fiber',
+    'cordis_search_dispatches',
+    'cordis_profiler_traces',
+  ])
+  const mcpSummary = await mcpClient.callTool({ name: 'cordis_runtime_summary', arguments: {} })
+  assert.equal(mcpSummary.isError, undefined)
+  assert.equal(mcpSummary.structuredContent?.dispatchWindow?.bounded, true)
+  assert.equal(mcpSummary.structuredContent?.profiler?.instrumentation, 'disabled')
+
+  const duplicateEvidence = await waitForDuplicateEvidence(mcpClient)
+  assert.equal(duplicateEvidence.event.listenerCount, 2)
+  assert.equal(duplicateEvidence.ownerUids.length, 2)
+  assert.equal(new Set(duplicateEvidence.ownerUids).size, 2)
+  assert.equal(duplicateEvidence.byName.matches.length, 2)
+  assert.equal(duplicateEvidence.dispatches.window.bounded, true)
+  assert.ok(duplicateEvidence.dispatches.records.some(record => record.registeredListeners === 2))
 
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
@@ -130,16 +170,84 @@ try {
   await panel.waitFor({ state: 'detached', timeout: 10_000 })
 
   assert.deepEqual(pageErrors, [], `browser page errors:\n${pageErrors.map(String).join('\n')}`)
-  console.log(`DSH Web smoke passed at ${baseUrl}`)
+  console.log(`DSH Web + Cordis Inspect + external MCP duplicate-fiber smoke passed at ${baseUrl} / ${mcpUrl}`)
 } catch (error) {
   if (serverOutput.length > 0) {
     console.error('\n--- dsh web output ---\n' + serverOutput + '\n--- end dsh web output ---')
   }
   throw error
 } finally {
+  await mcpClient?.close().catch(() => {})
   await browser?.close().catch(() => {})
   await stop(server)
   await rm(dshHome, { recursive: true, force: true })
+}
+
+async function waitForDuplicateEvidence(client) {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    const eventResult = await client.callTool({
+      name: 'cordis_inspect_event',
+      arguments: { name: DUPLICATE_EVENT },
+    })
+    const event = eventResult.structuredContent
+    const liveOwners = event?.listeners
+      ?.filter(listener => listener.ownerLive === true && listener.owner?.uid != null) ?? []
+    const uniqueOwnerUids = [...new Set(liveOwners.map(listener => listener.owner.uid))]
+    const uniqueOwnerNames = [...new Set(liveOwners.map(listener => listener.owner.name))]
+
+    if (
+      event?.found === true
+      && event.listenerCount === 2
+      && uniqueOwnerUids.length === 2
+      && uniqueOwnerNames.length === 1
+      && uniqueOwnerNames[0]
+    ) {
+      const byNameResult = await client.callTool({
+        name: 'cordis_inspect_fiber',
+        arguments: { name: uniqueOwnerNames[0] },
+      })
+      const byName = byNameResult.structuredContent
+      const fibersMatch = byName?.matches?.length === 2
+        && uniqueOwnerUids.every(uid => byName.matches.some(fiber => fiber.uid === uid))
+
+      let uidDetailsMatch = fibersMatch
+      if (uidDetailsMatch) {
+        for (const uid of uniqueOwnerUids) {
+          const byUidResult = await client.callTool({
+            name: 'cordis_inspect_fiber',
+            arguments: { uid },
+          })
+          const byUid = byUidResult.structuredContent
+          if (
+            byUid?.matches?.length !== 1
+            || byUid.matches[0].uid !== uid
+            || !byUid.matches[0].ownedEvents?.includes(DUPLICATE_EVENT)
+          ) {
+            uidDetailsMatch = false
+            break
+          }
+        }
+      }
+
+      if (uidDetailsMatch) {
+        const dispatchResult = await client.callTool({
+          name: 'cordis_search_dispatches',
+          arguments: { event: DUPLICATE_EVENT, limit: 20 },
+        })
+        const dispatches = dispatchResult.structuredContent
+        if (
+          dispatches?.window?.bounded === true
+          && dispatches.records?.some(record => record.registeredListeners === 2)
+        ) {
+          return { event, ownerUids: uniqueOwnerUids, byName, dispatches }
+        }
+      }
+    }
+
+    await delay(100)
+  }
+  throw new Error('timed out waiting for duplicate-Fiber evidence through MCP')
 }
 
 async function completeBlockingOnboarding(page) {
@@ -202,6 +310,26 @@ async function waitForOutput(marker, child) {
     await delay(100)
   }
   throw new Error(`timed out waiting for DSH output marker: ${marker}`)
+}
+
+async function waitForPort(targetPort, child) {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      throw new Error(`dsh web exited before MCP became reachable (code ${child.exitCode})`)
+    }
+    const reachable = await new Promise(resolve => {
+      const socket = net.createConnection({ host: '127.0.0.1', port: targetPort })
+      socket.once('connect', () => {
+        socket.destroy()
+        resolve(true)
+      })
+      socket.once('error', () => resolve(false))
+    })
+    if (reachable) return
+    await delay(100)
+  }
+  throw new Error(`timed out waiting for MCP port ${targetPort}`)
 }
 
 async function run(command, args, options) {
