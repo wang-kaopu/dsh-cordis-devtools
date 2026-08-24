@@ -26,6 +26,10 @@ export interface EmbeddedMcpHandle {
   close(): Promise<void>
 }
 
+interface ActiveProtocolRequest {
+  close(): Promise<void>
+}
+
 const EMPTY_SCHEMA = objectSchema({})
 const EVENT_SCHEMA = objectSchema(
   { name: { type: 'string', description: 'Exact live Cordis event name.' } },
@@ -59,7 +63,7 @@ export async function startEmbeddedMcpServer(
   options: EmbeddedMcpOptions = {},
 ): Promise<EmbeddedMcpHandle> {
   const port = normalizePort(options.port ?? DEFAULT_MCP_PORT)
-  const active = new Set<{ server: Server; transport: StreamableHTTPServerTransport }>()
+  const active = new Set<ActiveProtocolRequest>()
   let closing = false
 
   const http = createHttpServer(async (req, res) => {
@@ -92,17 +96,17 @@ export async function startEmbeddedMcpServer(
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
     })
-    const entry = { server, transport }
-    active.add(entry)
-
     let cleaned = false
-    const cleanup = async () => {
-      if (cleaned) return
-      cleaned = true
-      active.delete(entry)
-      await Promise.allSettled([transport.close(), server.close()])
+    const entry: ActiveProtocolRequest = {
+      async close() {
+        if (cleaned) return
+        cleaned = true
+        active.delete(entry)
+        await Promise.allSettled([transport.close(), server.close()])
+      },
     }
-    res.once('close', () => { void cleanup() })
+    active.add(entry)
+    res.once('close', () => { void entry.close() })
 
     try {
       await server.connect(transport)
@@ -113,7 +117,7 @@ export async function startEmbeddedMcpServer(
       } else if (!res.writableEnded) {
         res.end()
       }
-      await cleanup()
+      await entry.close()
     }
   })
 
@@ -140,11 +144,8 @@ export async function startEmbeddedMcpServer(
     async close() {
       if (closing) return
       closing = true
+      await Promise.allSettled([...active].map(entry => entry.close()))
       await closeHttpServer(http)
-      await Promise.allSettled([...active].map(async ({ server, transport }) => {
-        active.delete({ server, transport })
-        await Promise.allSettled([transport.close(), server.close()])
-      }))
     },
   }
 }
