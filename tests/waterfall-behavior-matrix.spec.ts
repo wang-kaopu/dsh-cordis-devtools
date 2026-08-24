@@ -74,7 +74,7 @@ describe('Cordis 4.0.1 waterfall behavior matrix', () => {
     const steps: string[] = []
     let seenThis: unknown
     const pluginA = { name: 'matrix-a', apply(pluginCtx: Context) {
-      pluginCtx.on('devtools/matrix', function (log, next) {
+      pluginCtx.on('devtools/matrix', function (this: Context, log, next) {
         seenThis = this
         log.push('a')
         return next()
