@@ -9,8 +9,11 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { chromium } from 'playwright'
 
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2'
+const DUPLICATE_EVENT = 'cordis-devtools-e2e/duplicate-listener'
+const DUPLICATE_FIBER_NAME = 'cordis-devtools-e2e-duplicate-plugin'
 const repoRoot = process.cwd()
 const probeRoot = join(repoRoot, 'e2e', 'fixtures', 'waterfall-probe')
+const agentDebuggingProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'agent-debugging-probe')
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-cordis-devtools-e2e-'))
 const port = await getFreePort()
@@ -37,6 +40,10 @@ try {
   await run(pnpm, [
     'dlx', DSH_PACKAGE,
     'plugin', '--profile', 'web', 'add', probeRoot,
+  ], { env })
+  await run(pnpm, [
+    'dlx', DSH_PACKAGE,
+    'plugin', '--profile', 'web', 'add', agentDebuggingProbeRoot,
   ], { env })
   await writeFile(mcpPatch, [
     '- id: dsh-cordis-devtools',
@@ -81,6 +88,14 @@ try {
   assert.equal(mcpSummary.isError, undefined)
   assert.equal(mcpSummary.structuredContent?.dispatchWindow?.bounded, true)
   assert.equal(mcpSummary.structuredContent?.profiler?.instrumentation, 'disabled')
+
+  const duplicateEvidence = await waitForDuplicateEvidence(mcpClient)
+  assert.equal(duplicateEvidence.event.listenerCount, 2)
+  assert.equal(duplicateEvidence.ownerUids.length, 2)
+  assert.equal(new Set(duplicateEvidence.ownerUids).size, 2)
+  assert.equal(duplicateEvidence.byName.matches.length, 2)
+  assert.equal(duplicateEvidence.dispatches.window.bounded, true)
+  assert.ok(duplicateEvidence.dispatches.records.length >= 1)
 
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
@@ -150,7 +165,7 @@ try {
   await panel.waitFor({ state: 'detached', timeout: 10_000 })
 
   assert.deepEqual(pageErrors, [], `browser page errors:\n${pageErrors.map(String).join('\n')}`)
-  console.log(`DSH Web + external MCP smoke passed at ${baseUrl} / ${mcpUrl}`)
+  console.log(`DSH Web + external MCP duplicate-fiber smoke passed at ${baseUrl} / ${mcpUrl}`)
 } catch (error) {
   if (serverOutput.length > 0) {
     console.error('\n--- dsh web output ---\n' + serverOutput + '\n--- end dsh web output ---')
@@ -161,6 +176,67 @@ try {
   await browser?.close().catch(() => {})
   await stop(server)
   await rm(dshHome, { recursive: true, force: true })
+}
+
+async function waitForDuplicateEvidence(client) {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    const eventResult = await client.callTool({
+      name: 'cordis_inspect_event',
+      arguments: { name: DUPLICATE_EVENT },
+    })
+    const event = eventResult.structuredContent
+    const ownerUids = event?.listeners
+      ?.filter(listener => listener.ownerLive === true && listener.owner?.uid != null)
+      .map(listener => listener.owner.uid) ?? []
+    const uniqueOwnerUids = [...new Set(ownerUids)]
+
+    if (event?.found === true && event.listenerCount === 2 && uniqueOwnerUids.length === 2) {
+      const byNameResult = await client.callTool({
+        name: 'cordis_inspect_fiber',
+        arguments: { name: DUPLICATE_FIBER_NAME },
+      })
+      const byName = byNameResult.structuredContent
+      const fibersMatch = byName?.matches?.length === 2
+        && uniqueOwnerUids.every(uid => byName.matches.some(fiber => fiber.uid === uid))
+
+      let uidDetailsMatch = fibersMatch
+      if (uidDetailsMatch) {
+        for (const uid of uniqueOwnerUids) {
+          const byUidResult = await client.callTool({
+            name: 'cordis_inspect_fiber',
+            arguments: { uid },
+          })
+          const byUid = byUidResult.structuredContent
+          if (
+            byUid?.matches?.length !== 1
+            || byUid.matches[0].uid !== uid
+            || !byUid.matches[0].ownedEvents?.includes(DUPLICATE_EVENT)
+          ) {
+            uidDetailsMatch = false
+            break
+          }
+        }
+      }
+
+      if (uidDetailsMatch) {
+        const dispatchResult = await client.callTool({
+          name: 'cordis_search_dispatches',
+          arguments: { event: DUPLICATE_EVENT, limit: 20 },
+        })
+        const dispatches = dispatchResult.structuredContent
+        if (
+          dispatches?.window?.bounded === true
+          && dispatches.records?.some(record => uniqueOwnerUids.includes(record.thisFiber?.uid))
+        ) {
+          return { event, ownerUids: uniqueOwnerUids, byName, dispatches }
+        }
+      }
+    }
+
+    await delay(100)
+  }
+  throw new Error('timed out waiting for duplicate-Fiber evidence through MCP')
 }
 
 async function completeBlockingOnboarding(page) {
