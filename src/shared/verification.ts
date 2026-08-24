@@ -27,8 +27,8 @@ export interface RuntimeCheckpointEvent {
 }
 
 /**
- * Capture-local listener evidence. id and owner.uid must never be used as semantic
- * identity across checkpoints.
+ * Capture-local listener evidence. id, order and owner.uid remain useful within one
+ * checkpoint but must never be used as semantic identity across checkpoints.
  */
 export interface RuntimeCheckpointListener {
   id: number
@@ -73,7 +73,6 @@ export interface RuntimeCheckpointCompareInput {
 export interface RuntimeListenerSemanticDescriptor {
   event: string
   ownerName: string | null
-  order: number
   prepend: boolean
   global: boolean
 }

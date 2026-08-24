@@ -31,7 +31,7 @@ function checkpoint(overrides: Partial<RuntimeCheckpoint> = {}): RuntimeCheckpoi
 }
 
 describe('runtime verification semantic diff', () => {
-  it('ignores runtime-local listener ids and Fiber uids', () => {
+  it('ignores runtime-local listener ids/order and Fiber uids', () => {
     const baseline = checkpoint()
     const current = checkpoint({
       capturedAt: 2,
@@ -39,6 +39,7 @@ describe('runtime verification semantic diff', () => {
       listeners: [{
         ...baseline.listeners[0]!,
         id: 99,
+        order: 42,
         owner: { uid: 88, name: 'Plugin', state: 'active' },
       }],
       fibers: [{
@@ -56,13 +57,18 @@ describe('runtime verification semantic diff', () => {
     })
   })
 
-  it('preserves duplicate multiplicity as 2 -> 1', () => {
+  it('preserves duplicate multiplicity as 2 -> 1 even when capture-local order differs', () => {
     const base = checkpoint()
     const baseline = checkpoint({
       events: [{ name: 'event', listenerCount: 2 }],
       listeners: [
         base.listeners[0]!,
-        { ...base.listeners[0]!, id: 2, owner: { uid: 11, name: 'Plugin', state: 'active' } },
+        {
+          ...base.listeners[0]!,
+          id: 2,
+          order: 1,
+          owner: { uid: 11, name: 'Plugin', state: 'active' },
+        },
       ],
       fibers: [
         base.fibers[0]!,
@@ -72,7 +78,12 @@ describe('runtime verification semantic diff', () => {
     const current = checkpoint({
       capturedAt: 2,
       digest: 'after',
-      listeners: [{ ...base.listeners[0]!, id: 50, owner: { uid: 50, name: 'Plugin', state: 'active' } }],
+      listeners: [{
+        ...base.listeners[0]!,
+        id: 50,
+        order: 7,
+        owner: { uid: 50, name: 'Plugin', state: 'active' },
+      }],
       fibers: [{ ...base.fibers[0]!, uid: 50 }],
     })
 
@@ -80,7 +91,7 @@ describe('runtime verification semantic diff', () => {
     expect(result.changed).toBe(true)
     expect(result.events).toEqual([{ name: 'event', beforeListenerCount: 2, afterListenerCount: 1, delta: -1 }])
     expect(result.listenerGroups).toEqual([{ descriptor: {
-      event: 'event', ownerName: 'Plugin', order: 0, prepend: false, global: false,
+      event: 'event', ownerName: 'Plugin', prepend: false, global: false,
     }, beforeCount: 2, afterCount: 1, delta: -1 }])
     expect(result.fiberGroups).toHaveLength(1)
     expect(result.fiberGroups[0]).toMatchObject({ beforeCount: 2, afterCount: 1, delta: -1 })

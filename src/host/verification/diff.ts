@@ -60,7 +60,6 @@ function listenerDescriptor(listener: RuntimeCheckpoint['listeners'][number]): R
   return {
     event: listener.event,
     ownerName: listener.owner?.name ?? null,
-    order: listener.order,
     prepend: listener.prepend,
     global: listener.global,
   }
