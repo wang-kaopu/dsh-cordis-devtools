@@ -1,37 +1,47 @@
-# Agent Note: Fiber detail layout polish
+# Agent Note: DevTools detail layout and CSS Module injection
 
 Status: implemented
 
 ## Problem
 
-Fiber Inspector 的统计摘要与属性详情仍有两个局部视觉问题：
+Fiber Inspector 最初暴露了统计摘要和属性详情的局部视觉问题；继续检查真实 DSH Web 后，Profiler 整体与 Timeline 展开详情也出现明显的浏览器默认流式布局：
 
-- 第三个统计项 `recent dispatch-context hits` 在当前三列宽度下容易换成两行，使三项摘要的高度和阅读节奏不一致；
-- Fiber 属性虽然已经使用语义化 `<dl>/<dt>/<dd>`，但四组属性依赖 `display: contents` 共同参与一个外层 grid，实际渲染时 label/value 的行感较弱，也更容易受到内容高度影响。
+- Fiber 第三个统计项 `recent dispatch-context hits` 容易单独换行；
+- Fiber 属性的 label/value 行感较弱；
+- Timeline 的 `<dl>` 明明声明了两列 grid，真实浏览器却呈现 `dt` 与 `dd` 上下堆叠；
+- Profiler 的 header、status controls、trace/listener rows 也没有应用对应 module CSS。
+
+构建检查发现根因不在 React 结构，而在 `tsdown.config.ts` 的 CSS Module inline plugin：每个 `.module.css` 都复用了同一个固定 `tagId = dsh-cordis-devtools/DevtoolsPanel.module.css`。主面板 CSS 先插入后，后续 `DetailList.module.css` 与 `ProfilerView.module.css` 会被 `querySelector` 误判为已经注入，从而完全跳过自己的 `<style>`。
 
 ## Decision
 
-只修这两个局部布局，不扩大到搜索栏、左右栏比例或滚动条：
+同时修复局部 Fiber 排版和真正的 CSS 注入边界：
 
-- Fiber 统计卡保持三列，卡片统一 stretch；label 使用同一更紧凑字号并保持单行，避免第三项单独换行；
-- Fiber `state / parent / inject / events` 保留现有 `<dl>/<dt>/<dd>` 语义，但每个属性组自身成为 `76px + minmax(0, 1fr)` 的两列 grid；
-- Timeline detail list 继续保留原来的 shared-grid / `display: contents` 布局，不随本修复调整；
-- 不修改 Fiber 数据、导航、Effects、RPC、observer/profiler 行为或任何 shared contract。
+- Fiber 统计卡保持三列并统一 stretch；label 使用更紧凑字号和单行布局；
+- Fiber `state / parent / inject / events` 保留 `<dl>/<dt>/<dd>`，每个属性组自身成为 `76px + minmax(0, 1fr)` 两列 grid；
+- 不重写 Timeline 或 Profiler React 结构，继续使用已经存在的 `DetailList.module.css` / `ProfilerView.module.css` 规则；
+- CSS inline plugin 为每个模块生成稳定且唯一的 repository-relative style id，例如 `dsh-cordis-devtools/src/client/DetailList.module.css`；
+- style id 不包含构建机绝对路径；
+- built-client verification 提供最小 fake DOM，实际执行 bundle 后断言三份 CSS Module 都生成独立、非空的 style tag；
+- 不修改数据、导航、Effects、RPC、observer/profiler semantics 或 shared contract。
 
 ## Alternatives considered
 
-- 缩短统计项文案。未采用，因为现有名称准确表达它是 bounded dispatch-context hit，而不是更宽泛的 dispatch count；仅通过布局即可解决换行。
-- 继续使用 Fiber 外层总 grid，再靠 margin/padding 微调。未采用，因为每一项独立两列更直接，也不会影响 Timeline 当前已稳定的布局。
-- 同时调整左右栏宽度或滚动条。拒绝，超出本次明确限定的修复范围。
+- 继续调整 Timeline/Profiler 的 margin、grid 参数。拒绝，因为对应 CSS 根本没有进入真实页面，继续调数值无法修复根因。
+- 将三份 CSS 合并回 `DevtoolsPanel.module.css`。拒绝，因为这会逆转已经建立的 view/detail ownership；inline plugin 本来就应正确支持多个 CSS Module。
+- 使用 CSS 内容 hash 作为唯一 id。未采用；repository-relative module path 更可读、稳定，并且避免暴露绝对构建路径。
 
 ## Consequences
 
-Fiber summary 三项在桌面三列布局下保持一致高度和单行 label；属性区每个 label/value 形成稳定的一行两列关系，多行 Pill/value 仍可在右列内部自然换行。Timeline 与其他视图布局保持不变。
+真实 DSH Web 会同时注入主面板、DetailList 和 Profiler 三份 CSS Module。Timeline 展开详情重新按既有两列 definition-list 规则渲染，Profiler 恢复其紧凑 header / trace / listener 布局；Fiber 局部布局修复继续生效。
+
+未来新增 `.module.css` 不会再因为固定 style id 与已有模块发生碰撞。built-client gate 会直接捕获同类回归，而不是只证明 module-loader factory 可执行。
 
 ## Verification
 
 - repository policy / Agent Note gate；
 - typecheck；
-- existing client component tests；
-- build / built client bundle verification；
+- full Vitest suite；
+- build；
+- built client bundle verification，包含多 CSS Module 独立 style 注入断言；
 - real DSH Web E2E。
