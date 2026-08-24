@@ -12,7 +12,9 @@ A standalone MCP process that starts another Cordis runtime would inspect the wr
 
 Add an optional embedded Model Context Protocol server backed by the shared `RuntimeDiagnosticsQuery`. When explicitly enabled in plugin config, the running Host binds a Streamable HTTP MCP endpoint to `127.0.0.1` only. The first configured default port is `43127`; the lower-level start helper also accepts port `0` for deterministic ephemeral-port tests.
 
-The server uses the official `@modelcontextprotocol/sdk` as a production dependency and keeps it external to the Node bundle. Each stateless Streamable HTTP request creates a protocol server/transport pair over the same live diagnostics query source and closes that pair after the response. The owning Cordis effect closes the HTTP listener and active protocol resources during plugin disposal.
+The server uses the official `@modelcontextprotocol/sdk` as a production dependency and keeps it external to the Node bundle. The declared baseline is `^1.30.0`, matching the SDK release used by typecheck and the real Client/Streamable HTTP integration suite. The repository intentionally does not track a `pnpm-lock.yaml`, so the package manifest is the dependency source of truth.
+
+Each stateless Streamable HTTP request creates a protocol server/transport pair over the same live diagnostics query source and closes that pair after the response. The owning Cordis effect closes the HTTP listener and active protocol resources during plugin disposal.
 
 The first MCP surface is read-only and exposes five tools:
 
@@ -34,6 +36,7 @@ MCP is disabled by default. Enabling it is an explicit configuration choice. Lis
 - Expose profiler enable/disable tools immediately. Rejected because instrumentation changes dispatch behavior and requires a separate permission/lease design.
 - Allow configurable `0.0.0.0`/LAN binding. Rejected for the first slice because runtime metadata should not be remotely exposed by default and no remote authentication model has been approved.
 - Always fail plugin activation when the MCP port is unavailable. Rejected because MCP is an optional Agent adapter and should not remove the already-working observer/UI path unless the operator explicitly requests fail-fast behavior.
+- Advertise an older unverified MCP SDK minimum. Rejected because the package should not claim compatibility below the exact Streamable HTTP/tool-result API baseline exercised by CI.
 
 ## Consequences
 

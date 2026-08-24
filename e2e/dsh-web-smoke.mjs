@@ -13,6 +13,7 @@ const DUPLICATE_EVENT = 'cordis-devtools-e2e/duplicate-listener'
 const repoRoot = process.cwd()
 const probeRoot = join(repoRoot, 'e2e', 'fixtures', 'waterfall-probe')
 const agentDebuggingProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'agent-debugging-probe')
+const inspectProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'cordis-inspect-probe')
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-cordis-devtools-e2e-'))
 const port = await getFreePort()
@@ -44,6 +45,10 @@ try {
     'dlx', DSH_PACKAGE,
     'plugin', '--profile', 'web', 'add', agentDebuggingProbeRoot,
   ], { env })
+  await run(pnpm, [
+    'dlx', DSH_PACKAGE,
+    'plugin', '--profile', 'web', 'add', inspectProbeRoot,
+  ], { env })
   await writeFile(mcpPatch, [
     '- id: dsh-cordis-devtools',
     '  config:',
@@ -71,6 +76,7 @@ try {
   server.stderr.on('data', appendServerOutput)
 
   await waitForServer(baseUrl, server)
+  await waitForOutput('[cordis-devtools-e2e] CordisRuntime duplicate-fiber inspect OK', server)
   await waitForPort(mcpPort, server)
 
   mcpClient = new Client({ name: 'dsh-cordis-devtools-real-dsh-e2e', version: '1.0.0' })
@@ -164,7 +170,7 @@ try {
   await panel.waitFor({ state: 'detached', timeout: 10_000 })
 
   assert.deepEqual(pageErrors, [], `browser page errors:\n${pageErrors.map(String).join('\n')}`)
-  console.log(`DSH Web + external MCP duplicate-fiber smoke passed at ${baseUrl} / ${mcpUrl}`)
+  console.log(`DSH Web + Cordis Inspect + external MCP duplicate-fiber smoke passed at ${baseUrl} / ${mcpUrl}`)
 } catch (error) {
   if (serverOutput.length > 0) {
     console.error('\n--- dsh web output ---\n' + serverOutput + '\n--- end dsh web output ---')
@@ -292,6 +298,18 @@ async function waitForServer(url, child) {
     await delay(250)
   }
   throw new Error(`timed out waiting for ${url}`)
+}
+
+async function waitForOutput(marker, child) {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    if (serverOutput.includes(marker)) return
+    if (child.exitCode !== null) {
+      throw new Error(`dsh web exited before emitting ${marker} (code ${child.exitCode})`)
+    }
+    await delay(100)
+  }
+  throw new Error(`timed out waiting for DSH output marker: ${marker}`)
 }
 
 async function waitForPort(targetPort, child) {
