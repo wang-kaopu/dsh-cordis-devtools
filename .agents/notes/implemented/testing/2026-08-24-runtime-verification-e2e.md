@@ -14,7 +14,7 @@ Before the transition, the in-process `CordisRuntime` provider captures its own 
 
 The test then creates the fixture signal file beneath the disposable `DSH_HOME`, causing the fixture to dispose exactly one live Fiber. After that same authoritative transition, DSH calls `compareCurrent` through `cordisInspect`, and the external client calls `cordis_compare_current` through the embedded loopback MCP server.
 
-Both paths must independently report the same semantic facts: event listener count `2 -> 1`, equivalent listener-group multiplicity `2 -> 1`, and equivalent Fiber-group multiplicity `2 -> 1`. The E2E compares only this semantic summary, not capture-local ids/uids, timestamps, or digests. The existing Human DevTools and waterfall-profiler browser assertions remain in the same DSH process after verification.
+Both paths must independently report the same semantic facts: event listener count `2 -> 1`, equivalent listener-group multiplicity `2 -> 1`, and equivalent Fiber-group multiplicity `2 -> 1`. The E2E compares only this semantic summary, not capture-local ids/uids, listener registration order, timestamps, or digests. In particular, this locks the corrected listener identity semantics: registration order remains checkpoint evidence but does not split semantically equivalent duplicate listeners across checkpoints. The existing Human DevTools and waterfall-profiler browser assertions remain in the same DSH process after verification.
 
 ## Alternatives considered
 
