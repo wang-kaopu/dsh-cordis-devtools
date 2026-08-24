@@ -4,6 +4,7 @@ import {
   createDshExperimentToolDefinitions,
   DSH_START_WATERFALL_EXPERIMENT_TOOL,
   DSH_STOP_WATERFALL_EXPERIMENT_TOOL,
+  installDshExperimentTools,
   type DshWaterfallExperimentControl,
 } from '../src/host/dsh-experiments.js'
 
@@ -135,5 +136,39 @@ describe('DSH waterfall experiment tools adapter', () => {
     await expect(stop.execute({ leaseId: '' }, exec)).rejects.toThrow('non-empty')
     expect(experimentControl.startAgent).not.toHaveBeenCalled()
     expect(experimentControl.stopAgent).not.toHaveBeenCalled()
+  })
+
+  it('registers both tools only when DSH ToolRuntime exists and disposes them with the injected lifecycle', () => {
+    const disposeStart = vi.fn()
+    const disposeStop = vi.fn()
+    const register = vi.fn((definition: { name: string }) => {
+      if (definition.name === DSH_START_WATERFALL_EXPERIMENT_TOOL) return disposeStart
+      if (definition.name === DSH_STOP_WATERFALL_EXPERIMENT_TOOL) return disposeStop
+      throw new Error('unexpected tool')
+    })
+    let lifecycleDispose: (() => void) | undefined
+    const child = {
+      get: vi.fn(() => ({ register })),
+      effect: vi.fn((factory: () => () => void) => {
+        lifecycleDispose = factory()
+        return lifecycleDispose
+      }),
+    }
+    const inject = vi.fn((_services: string[], callback: (ctx: typeof child) => void) => callback(child))
+    const ctx = {
+      inject,
+      get: vi.fn(() => undefined),
+    } as unknown as Context
+
+    installDshExperimentTools(ctx, control())
+
+    expect(inject).toHaveBeenCalledWith(['tools'], expect.any(Function))
+    expect(register.mock.calls.map(call => call[0].name)).toEqual([
+      DSH_START_WATERFALL_EXPERIMENT_TOOL,
+      DSH_STOP_WATERFALL_EXPERIMENT_TOOL,
+    ])
+    lifecycleDispose?.()
+    expect(disposeStop).toHaveBeenCalledTimes(1)
+    expect(disposeStart).toHaveBeenCalledTimes(1)
   })
 })
