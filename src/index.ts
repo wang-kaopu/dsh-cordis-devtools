@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { installCordisRuntimeInspect } from './host/cordis-inspect.js'
 import { installDshExperimentTools } from './host/dsh-experiments.js'
+import { createMcpExperimentControl } from './host/mcp-experiment-control.js'
 import { DEFAULT_MCP_PORT, installEmbeddedMcpServer } from './host/mcp.js'
 import { installDevtoolsRpc } from './host/rpc.js'
 import { DevtoolsService } from './host/service.js'
@@ -8,11 +9,20 @@ import { DevtoolsService } from './host/service.js'
 export const name = 'dsh-cordis-devtools'
 export const provide = 'cordisDevtools'
 
+export interface McpExperimentConfig {
+  /** Expose authenticated start/stop mutation tools. Default false. */
+  enabled?: boolean
+}
+
 export interface McpConfig {
-  /** Expose read-only runtime diagnostics to external MCP clients. Default false. */
+  /** Expose runtime diagnostics to external MCP clients. Default false. */
   enabled?: boolean
   /** Loopback TCP port. Default 43127. Use 0 only for programmatic ephemeral-port tests. */
   port?: number
+  /** Optional bearer token. When configured, every MCP request requires it. */
+  token?: string
+  /** Optional controlled waterfall experiment capability. Omit to preserve the v0.5 seven-tool surface. */
+  experiments?: McpExperimentConfig
   /** Reject plugin activation if the MCP listener cannot start. Default false. */
   failOnStartupError?: boolean
 }
@@ -44,9 +54,18 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   installDshExperimentTools(ctx, service)
 
   if (config.mcp?.enabled === true) {
+    const experiments = config.mcp.experiments === undefined
+      ? undefined
+      : {
+          enabled: config.mcp.experiments.enabled ?? false,
+          control: createMcpExperimentControl(service),
+        }
+
     await installEmbeddedMcpServer(ctx, service.diagnostics, {
       port: config.mcp.port ?? DEFAULT_MCP_PORT,
+      token: config.mcp.token,
       failOnStartupError: config.mcp.failOnStartupError ?? false,
+      ...(experiments === undefined ? {} : { experiments }),
     })
   }
 }
