@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button, DisclosureRow, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { WaterfallExperimentStatus } from '../../shared/experiments.js'
 import type {
   WaterfallDispatchTrace,
   WaterfallInstrumentationState,
@@ -9,6 +10,7 @@ import css from './ProfilerView.module.css'
 
 export interface ProfilerViewProps {
   status: WaterfallInstrumentationState
+  experiment?: WaterfallExperimentStatus
   traces: readonly WaterfallDispatchTrace[]
   liveFiberUids: ReadonlySet<number>
   busy?: boolean
@@ -18,6 +20,7 @@ export interface ProfilerViewProps {
 
 export function ProfilerView({
   status,
+  experiment,
   traces,
   liveFiberUids,
   busy = false,
@@ -26,8 +29,14 @@ export function ProfilerView({
 }: ProfilerViewProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const rows = [...traces].reverse()
+  const agentOwner = experiment?.owner.kind === 'agent' ? experiment.owner : undefined
+  const humanOwner = experiment?.owner.kind === 'human'
   const canToggle = (status === 'disabled' || status === 'enabled') && onSetInstrumentation !== undefined
-  const toggleLabel = status === 'enabled' ? 'Disable profiling' : 'Enable profiling'
+  const toggleLabel = agentOwner !== undefined
+    ? 'Stop Agent experiment'
+    : status === 'enabled'
+      ? 'Disable profiling'
+      : 'Enable profiling'
 
   const toggle = (id: string): void => {
     setExpanded((current) => {
@@ -47,13 +56,15 @@ export function ProfilerView({
         </div>
         <div className={css.headerActions}>
           <Pill active={status === 'enabled'}>{status}</Pill>
+          {agentOwner !== undefined && <Pill active>{`Agent · ${agentOwner.source}`}</Pill>}
+          {humanOwner && <Pill>Human</Pill>}
           {canToggle && (
             <Button
               variant="ghost"
               size="sm"
               data-testid="cordis-devtools-profiler-toggle"
               disabled={busy}
-              onClick={() => { onSetInstrumentation(status !== 'enabled') }}
+              onClick={() => { onSetInstrumentation(agentOwner !== undefined ? false : status !== 'enabled') }}
             >
               {toggleLabel}
             </Button>
@@ -61,6 +72,11 @@ export function ProfilerView({
         </div>
       </header>
 
+      {agentOwner !== undefined && (
+        <div className={css.statusNote} data-testid="cordis-devtools-profiler-agent-owner">
+          {`Agent-owned ${agentOwner.source} experiment · expires ${formatExpiry(agentOwner.expiresAt)} · Human stop is available as an emergency action.`}
+        </div>
+      )}
       {status === 'conflict' && (
         <div className={css.statusNote}>Instrumentation is unavailable because another runtime patch owns dispatch.</div>
       )}
@@ -175,4 +191,8 @@ function formatElapsed(start: number, end: number | null): string {
 function formatOffset(start: number, value: number | null): string {
   if (value === null) return '—'
   return `+${Math.max(0, value - start).toFixed(2)} ms`
+}
+
+function formatExpiry(expiresAt: number): string {
+  return new Date(expiresAt).toLocaleTimeString()
 }
