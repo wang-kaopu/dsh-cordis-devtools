@@ -220,7 +220,7 @@ describe('Cordis 4.0.1 waterfall behavior matrix', () => {
     expect(steps).toEqual(['direct', 'inner'])
 
     steps.length = 0
-    expect(dispose()).toBe(true)
+    expect(dispose()).toBeUndefined()
     run(ctx, steps)
     expect(steps).toEqual(['inner'])
 
