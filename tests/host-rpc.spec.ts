@@ -2,13 +2,18 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createDevtoolsRpcHandler,
   registerDevtoolsRpc,
+  type DevtoolsRpcService,
   type HostConnectionLike,
 } from '../src/host/rpc.js'
 import {
   DEVTOOLS_RPC_CHANNEL,
+  DEVTOOLS_RPC_INSTRUMENTATION_DISABLE_ENDPOINT,
+  DEVTOOLS_RPC_INSTRUMENTATION_ENABLE_ENDPOINT,
+  DEVTOOLS_RPC_PROFILER_SNAPSHOT_ENDPOINT,
   DEVTOOLS_RPC_SNAPSHOT_ENDPOINT,
 } from '../src/shared/rpc.js'
-import type { CordisDevtoolsService, DevtoolsSnapshot } from '../src/shared/types.js'
+import type { DevtoolsSnapshot } from '../src/shared/types.js'
+import type { WaterfallProfilerSnapshot } from '../src/shared/trace.js'
 
 const snapshot: DevtoolsSnapshot = {
   generatedAt: 1,
@@ -32,20 +37,55 @@ const snapshot: DevtoolsSnapshot = {
   dispatches: [],
 }
 
-const service: CordisDevtoolsService = {
-  snapshot: () => snapshot,
-  clearDispatches: () => {},
-  subscribe: () => () => {},
+const disabledProfiler: WaterfallProfilerSnapshot = {
+  generatedAt: 2,
+  instrumentation: 'disabled',
+  traces: [],
+}
+const enabledProfiler: WaterfallProfilerSnapshot = {
+  generatedAt: 3,
+  instrumentation: 'enabled',
+  traces: [],
+}
+
+function createService(): DevtoolsRpcService {
+  let profiler = disabledProfiler
+  return {
+    snapshot: () => snapshot,
+    clearDispatches: () => {},
+    subscribe: () => () => {},
+    profilerSnapshot: () => profiler,
+    setInstrumentationEnabled(enabled) {
+      profiler = enabled ? enabledProfiler : disabledProfiler
+      return profiler
+    },
+  }
 }
 
 describe('Cordis DevTools RPC', () => {
-  it('serves the current snapshot and rejects unknown endpoints', async () => {
-    const handler = createDevtoolsRpcHandler(service)
+  it('serves observer and profiler snapshots and controls instrumentation', async () => {
+    const handler = createDevtoolsRpcHandler(createService())
     const signal = new AbortController().signal
 
     await expect(handler(DEVTOOLS_RPC_SNAPSHOT_ENDPOINT, {}, signal)).resolves.toEqual({
       ok: true,
       value: snapshot,
+    })
+    await expect(handler(DEVTOOLS_RPC_PROFILER_SNAPSHOT_ENDPOINT, {}, signal)).resolves.toEqual({
+      ok: true,
+      value: disabledProfiler,
+    })
+    await expect(handler(DEVTOOLS_RPC_INSTRUMENTATION_ENABLE_ENDPOINT, {}, signal)).resolves.toEqual({
+      ok: true,
+      value: enabledProfiler,
+    })
+    await expect(handler(DEVTOOLS_RPC_PROFILER_SNAPSHOT_ENDPOINT, {}, signal)).resolves.toEqual({
+      ok: true,
+      value: enabledProfiler,
+    })
+    await expect(handler(DEVTOOLS_RPC_INSTRUMENTATION_DISABLE_ENDPOINT, {}, signal)).resolves.toEqual({
+      ok: true,
+      value: disabledProfiler,
     })
 
     await expect(handler('missing', {}, signal)).resolves.toMatchObject({
@@ -70,7 +110,7 @@ describe('Cordis DevTools RPC', () => {
       },
     }
 
-    const returned = registerDevtoolsRpc(connection, service)
+    const returned = registerDevtoolsRpc(connection, createService())
 
     expect(returned).toBe(dispose)
     expect(capturedChannel).toBe(DEVTOOLS_RPC_CHANNEL)
