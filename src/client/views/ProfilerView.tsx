@@ -10,6 +10,7 @@ import css from './ProfilerView.module.css'
 export interface ProfilerViewProps {
   status: WaterfallInstrumentationState
   traces: readonly WaterfallDispatchTrace[]
+  liveFiberUids: ReadonlySet<number>
   busy?: boolean
   onSetInstrumentation?(enabled: boolean): void
   onOpenFiber?(uid: number): void
@@ -18,6 +19,7 @@ export interface ProfilerViewProps {
 export function ProfilerView({
   status,
   traces,
+  liveFiberUids,
   busy = false,
   onSetInstrumentation,
   onOpenFiber,
@@ -97,6 +99,7 @@ export function ProfilerView({
                         key={listener.id}
                         traceStartedAt={trace.startedAt}
                         listener={listener}
+                        liveFiberUids={liveFiberUids}
                         onOpenFiber={onOpenFiber}
                       />
                     ))}
@@ -114,14 +117,19 @@ export function ProfilerView({
 function ListenerRow({
   traceStartedAt,
   listener,
+  liveFiberUids,
   onOpenFiber,
 }: {
   traceStartedAt: number
   listener: WaterfallListenerSpan
+  liveFiberUids: ReadonlySet<number>
   onOpenFiber?: (uid: number) => void
 }) {
   const owner = listener.owner
-  const ownerIsLiveReference = owner?.uid !== null && owner?.uid !== undefined && onOpenFiber !== undefined
+  const ownerIsLiveReference = owner?.uid !== null
+    && owner?.uid !== undefined
+    && liveFiberUids.has(owner.uid)
+    && onOpenFiber !== undefined
 
   return (
     <div className={css.listenerRow} data-listener-span={listener.id}>

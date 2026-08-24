@@ -41,12 +41,19 @@ afterEach(async () => {
   host = undefined
 })
 
-function render(onOpenFiber = vi.fn()) {
+function render(onOpenFiber = vi.fn(), liveFiberUids: ReadonlySet<number> = new Set([7])) {
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
   act(() => {
-    root!.render(<ProfilerView status="enabled" traces={[trace]} onOpenFiber={onOpenFiber} />)
+    root!.render(
+      <ProfilerView
+        status="enabled"
+        traces={[trace]}
+        liveFiberUids={liveFiberUids}
+        onOpenFiber={onOpenFiber}
+      />,
+    )
   })
   return { host, onOpenFiber }
 }
@@ -73,7 +80,7 @@ describe('ProfilerView', () => {
     expect(host.textContent).not.toContain('veto')
   })
 
-  it('navigates to a listener owner through the rendered Pill', async () => {
+  it('navigates to a live listener owner through the rendered Pill', async () => {
     const onOpenFiber = vi.fn()
     const { host } = render(onOpenFiber)
     await act(async () => { disclosure(host)?.click() })
@@ -85,12 +92,24 @@ describe('ProfilerView', () => {
     expect(onOpenFiber).toHaveBeenCalledWith(7)
   })
 
+  it('keeps a historical listener owner visible but non-navigable after its Fiber is gone', async () => {
+    const onOpenFiber = vi.fn()
+    const { host } = render(onOpenFiber, new Set())
+    await act(async () => { disclosure(host)?.click() })
+
+    expect(host.textContent).toContain('loader-plugin')
+    const ownerButton = [...host.querySelectorAll<HTMLButtonElement>('[data-listener-span="span-1"] button')]
+      .find(button => button.textContent === 'loader-plugin')
+    expect(ownerButton).toBeUndefined()
+    expect(onOpenFiber).not.toHaveBeenCalled()
+  })
+
   it('shows an explicit empty state without inventing trace conclusions', () => {
     host = document.createElement('div')
     document.body.append(host)
     root = createRoot(host)
     act(() => {
-      root!.render(<ProfilerView status="disabled" traces={[]} />)
+      root!.render(<ProfilerView status="disabled" traces={[]} liveFiberUids={new Set()} />)
     })
 
     expect(host.textContent).toContain('disabled')
