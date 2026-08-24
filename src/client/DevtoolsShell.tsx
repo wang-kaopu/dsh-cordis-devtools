@@ -346,6 +346,7 @@ export function EventExplorerAction({ wide, store, profilerStore }: EventExplore
               ) : (
                 <ProfilerView
                   status={profilerState.snapshot.instrumentation}
+                  experiment={profilerState.snapshot.experiment}
                   traces={profilerState.snapshot.traces}
                   liveFiberUids={liveFiberUids}
                   busy={profilerState.mutating}
