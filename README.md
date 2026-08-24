@@ -1,10 +1,10 @@
 # dsh-cordis-devtools
 
-Runtime diagnostics and opt-in waterfall profiler for DeepSeek Harness / Cordis — usable by developers, in-process DSH agents, and external MCP clients.
+Runtime diagnostics, before/after verification, and opt-in waterfall profiling for DeepSeek Harness / Cordis — usable by developers, in-process DSH agents, and external MCP clients.
 
-> Current repository version: **0.4.0**. The default path remains observer-first and behavior-neutral; waterfall instrumentation is enabled only by an explicit DevTools action.
+> Current repository version: **0.5.0**. Agent diagnostics and verification remain read-only with respect to the target Cordis runtime; waterfall instrumentation is enabled only by an explicit human DevTools action.
 >
-> Repository version readiness does **not** imply that an npm package or Git tag has been published.
+> Repository version readiness does **not** imply that an npm package, Git tag, or GitHub Release has been published.
 
 ## Current capabilities
 
@@ -17,8 +17,11 @@ Runtime diagnostics and opt-in waterfall profiler for DeepSeek Harness / Cordis 
 - Bounded profiler trace retention separated from the observer snapshot path.
 - One DSH sidebar DevTools surface with `Events`, `Timeline`, `Fibers`, and `Profiler` views.
 - Shared transport-neutral **Runtime Diagnostics Query** layer for targeted runtime summary, Event, Fiber, dispatch, and existing profiler-trace reads.
+- Versioned, caller-owned **Runtime Verification checkpoints** plus semantic before/after diff over authoritative current topology.
+- Multiplicity-preserving Event / Listener / Fiber comparison that ignores runtime-local id/uid churn and capture-local listener order as cross-checkpoint identity.
 - DSH-native `CordisRuntime` Inspect Provider through the existing first-party `cordisInspect` registry.
 - Optional embedded **MCP Streamable HTTP** endpoint for external coding agents, loopback-only and disabled by default.
+- One real DSH verification proof where DSH Cordis Inspect and an external official MCP Client independently carry baselines across the same real duplicate-Fiber `2 → 1` lifecycle transition and recover the same semantic diff.
 - Loopback-only Host → browser diagnostics/control through DSH Connection RPC.
 - DSH-native control chrome through `@deepseek-ai/dsh-client-ui-primitives`.
 
@@ -26,7 +29,7 @@ Runtime diagnostics and opt-in waterfall profiler for DeepSeek Harness / Cordis 
 
 ### Observer mode — default
 
-Installing the plugin, opening Cordis DevTools, polling Events/Timeline/Fibers, using the read-only Agent diagnostics, or opening the Profiler view does **not** enable instrumentation.
+Installing the plugin, opening Cordis DevTools, polling Events/Timeline/Fibers, using the read-only Agent diagnostics/verification operations, or opening the Profiler view does **not** enable instrumentation.
 
 Observer mode:
 
@@ -69,20 +72,24 @@ Instrumented mode is intentionally not described as zero-side-effect observation
              ▼                                 ▼
    browser RPC / profiler RPC        RuntimeDiagnosticsQuery
              │                         read-only facts
-             ▼                         /          \
-      Cordis DevTools Web             ▼            ▼
- Events | Timeline | Fibers     CordisRuntime     MCP
-          | Profiler             Inspect Provider  127.0.0.1 only
-                                      │            │
-                                      ▼            ▼
-                                  DSH Agent    External agents
+             ▼                              │
+      Cordis DevTools Web                   ▼
+ Events | Timeline | Fibers          Runtime Verification
+          | Profiler                checkpoint + semantic diff
+                                           /          \
+                                          ▼            ▼
+                                  CordisRuntime       MCP
+                                  Inspect Provider    127.0.0.1 only
+                                          │            │
+                                          ▼            ▼
+                                      DSH Agent    External agents
 ```
 
 Direct listener-registry / live-Fiber implementation access remains isolated behind `src/host/cordis-adapter.ts`. Waterfall instrumentation compatibility logic lives in `src/host/instrumentation/waterfall-controller.ts`; observer collection does not depend on it.
 
-`RuntimeDiagnosticsQuery` does not create a second runtime model. It performs targeted reads over the same observer/profiler facts already owned by `DevtoolsService`, so DSH Inspect and MCP share evidence semantics instead of implementing their own runtime traversal.
+`RuntimeDiagnosticsQuery` and Runtime Verification do not create a second runtime model. They perform targeted reads and canonical projections over the same observer/profiler facts already owned by `DevtoolsService`, so DSH Inspect and MCP share evidence semantics instead of implementing their own runtime traversal or diff algorithms.
 
-See [the architecture document](docs/architecture.md) and [Agent Runtime Diagnostics guide](docs/agent-runtime-diagnostics.md) for detailed invariants and machine-facing semantics.
+See [the architecture document](docs/architecture.md), [Agent Runtime Diagnostics guide](docs/agent-runtime-diagnostics.md), and [v0.5 Runtime Verification design](docs/v0.5-runtime-verification.md) for detailed invariants and machine-facing semantics.
 
 ## Web Cordis DevTools
 
@@ -126,15 +133,41 @@ Repeated or late `next()` is displayed as recorded behavior rather than normaliz
 
 `conflict` and `unsupported` instrumentation states are visible and do not expose a misleading enable/disable action.
 
-## Agent Runtime Diagnostics
+## Agent Runtime Diagnostics and Verification
 
-The Agent-facing surface is deliberately read-only in v0.4. It exposes five logical queries over the live runtime:
+The Agent-facing surface remains read-only in v0.5. It exposes seven logical operations over the live runtime:
 
 - `runtimeSummary`;
 - `inspectEvent`;
 - `inspectFiber`;
 - `searchDispatches`;
-- `profilerTraces`.
+- `profilerTraces`;
+- `captureCheckpoint`;
+- `compareCurrent`.
+
+The first five are targeted runtime reads. The last two implement before/after Runtime Verification without storing checkpoint state in the Host.
+
+### Runtime Verification workflow
+
+A checkpoint is a versioned, self-contained JSON value returned to the caller. The Agent keeps it and later sends it back to `compareCurrent`:
+
+```text
+inspect runtime problem
+        ↓
+captureCheckpoint(scope?)
+        ↓
+edit / reload through the normal development workflow
+        ↓
+compareCurrent({ baseline })
+        ↓
+semantic Event / Listener / Fiber changes
+```
+
+Checkpoint scope supports exact event and Fiber names. The checkpoint contains authoritative current Event / Listener / live-Fiber topology and metadata-only Effects; bounded dispatch history and profiler traces are deliberately excluded.
+
+Cross-checkpoint comparison is semantic and multiplicity-based. Runtime-local listener ids, Fiber uids, owner uids, and listener registration order may be useful capture-local evidence but are not stable identity keys across checkpoints. Listener semantic groups use event + owner name + `prepend` + `global`; Fiber semantic groups use canonical current Fiber metadata. This lets duplicate equivalent instances report `2 → 1` instead of arbitrary instance pairing.
+
+`compareCurrent` returns facts only. It does not emit `fixed`, `rootCause`, or confidence fields.
 
 ### DSH Agent path
 
@@ -160,7 +193,7 @@ The endpoint is then available at:
 http://127.0.0.1:43127/mcp
 ```
 
-The five MCP tools are:
+The seven MCP tools are:
 
 ```text
 cordis_runtime_summary
@@ -168,11 +201,13 @@ cordis_inspect_event
 cordis_inspect_fiber
 cordis_search_dispatches
 cordis_profiler_traces
+cordis_capture_checkpoint
+cordis_compare_current
 ```
 
-All are marked read-only and idempotent. A listener bind failure is logged and contained to the optional MCP adapter by default; `failOnStartupError: true` makes MCP availability required for plugin activation. No v0.4 configuration can widen the bind beyond loopback.
+All are marked read-only and idempotent. A listener bind failure is logged and contained to the optional MCP adapter by default; `failOnStartupError: true` makes MCP availability required for plugin activation. No v0.5 configuration can widen the bind beyond loopback.
 
-See [Agent Runtime Diagnostics](docs/agent-runtime-diagnostics.md) for evidence semantics and example Agent flows.
+See [Agent Runtime Diagnostics](docs/agent-runtime-diagnostics.md) for evidence semantics and [Runtime Verification](docs/v0.5-runtime-verification.md) for checkpoint/diff semantics and the real DSH proof.
 
 ## Refresh and retention semantics
 
@@ -196,7 +231,10 @@ src/
 ├─ host/
 │  ├─ collector.ts                         # behavior-neutral observer core
 │  ├─ cordis-adapter.ts                    # listener/live-fiber compatibility seam
-│  ├─ diagnostics.ts                       # transport-neutral targeted runtime queries
+│  ├─ diagnostics.ts                       # transport-neutral targeted + verification queries
+│  ├─ verification/
+│  │  ├─ checkpoint.ts                     # canonical caller-owned checkpoint projection
+│  │  └─ diff.ts                           # semantic multiplicity-preserving comparison
 │  ├─ cordis-inspect.ts                    # DSH CordisRuntime Provider adapter
 │  ├─ mcp.ts                               # embedded loopback MCP adapter
 │  ├─ service.ts                           # observer + profiler composition
@@ -207,6 +245,7 @@ src/
 │     └─ waterfall-controller.ts           # explicit waterfall instrumentation seam
 ├─ shared/
 │  ├─ diagnostics.ts                       # machine-facing diagnostics contracts
+│  ├─ verification.ts                      # checkpoint/diff contracts
 │  ├─ rpc.ts                               # observer/profiler endpoint constants
 │  ├─ types.ts                             # observer snapshot contracts
 │  └─ trace.ts                             # waterfall trace/status contracts
@@ -260,9 +299,22 @@ src/
 - official external MCP Client proof against the same running DSH process;
 - one final real DSH smoke covering Cordis Inspect + external MCP + Human DevTools/Profiler together.
 
-Profiler mutation tools, automatic root-cause `diagnose()`, remote/LAN MCP exposure, stdio bridge, automatic client configuration, multi-runtime discovery, persistent checkpoints/diffs, payload capture, and profiling of non-waterfall modes remain intentionally deferred beyond the first v0.4 slice.
-
 Detailed v0.4 milestone evidence is in [the v0.4 roadmap](docs/v0.4-roadmap.md).
+
+### v0.5 — Runtime Verification ✓ repository-ready
+
+- versioned self-contained Runtime Checkpoint contract with deterministic canonicalization and digest validation;
+- exact-name Event/Fiber scope with deterministic one-hop topology closure;
+- semantic Event / Listener / Fiber diff with duplicate multiplicity preservation and runtime-local id/uid/order churn excluded from cross-checkpoint identity;
+- shared `captureCheckpoint` / `compareCurrent` implementation through `RuntimeDiagnosticsQuery`;
+- DSH `CordisRuntime` and external MCP adapters expose the same verification facts without duplicate algorithms;
+- deterministic real Cordis duplicate topology transition from `2 → 1`;
+- one final real DSH smoke proves DSH Inspect and an external official MCP Client independently carry baselines across that same transition and return identical semantic `2 → 1` evidence;
+- existing Human DevTools and waterfall Profiler regression remains green in the same process.
+
+Automatic source/plugin reload, profiler mutation/leases, root-cause `diagnose()`, remote/LAN MCP exposure, stdio bridge, automatic client configuration, multi-runtime discovery, persistent checkpoint storage, payload capture, and profiling of non-waterfall modes remain intentionally deferred beyond v0.5.
+
+Detailed v0.5 milestone evidence is in [the v0.5 roadmap](docs/v0.5-roadmap.md).
 
 ## Install into a DSH Web profile
 
@@ -293,7 +345,7 @@ pnpm verify:client-bundle
 pnpm test:e2e:web
 ```
 
-CI runs the real DSH Web smoke in Chromium against a disposable profile. The v0.4 smoke creates a deterministic duplicate-Fiber runtime shape, proves it through the real DSH `CordisRuntime` Inspect path, connects an official MCP Client from outside the running DSH process to prove the same evidence, and then continues the existing human UI + real waterfall Profiler assertions. E2E fixtures are not part of the published package files or production plugin runtime.
+CI runs the real DSH Web smoke in Chromium against a disposable profile. The v0.5 smoke creates a deterministic duplicate-Fiber runtime transition, captures separate baselines through the real DSH `CordisRuntime` Inspect path and an external official MCP Client, drives the same real Cordis `2 → 1` lifecycle change, requires both adapters to recover the same semantic diff, and then continues the existing Human UI + real waterfall Profiler assertions. E2E fixtures are not part of the published package files or production plugin runtime.
 
 The existing waterfall overhead harness compares disabled and enabled representative samples as regression evidence. It intentionally does not impose a fixed percentage budget on hosted CI runners because those timings are noisy.
 
@@ -308,8 +360,12 @@ This repository treats cold-start coding agents as first-class contributors. Sta
 - `DevtoolsSnapshot.fibers` and Effects are live inventory; historical dispatch Fiber references can outlive the Fiber.
 - Empty Agent dispatch results mean “not observed in the retained bounded window,” not “never happened.”
 - `truncated: true` means a query limit omitted retained matches; `bounded: true` separately means older runtime history may already have been overwritten.
+- Runtime Verification checkpoints contain authoritative current topology, not bounded dispatch/profiler history.
+- Checkpoints are caller-owned serializable values; the Host does not persist checkpoint ids/history in v0.5.
+- Runtime-local listener ids, listener order, Fiber/owner uids, timestamps, and checkpoint digests are evidence/integrity fields, not automatic cross-checkpoint object identity.
+- Semantic comparison reports mechanical topology facts and multiplicities; it does not claim a root cause or that a code fix succeeded.
 - Profiler traces are bounded snapshots that can be updated while late continuation facts arrive; they are not a lossless persistent trace database.
-- Read-only Agent diagnostics do not enable profiler instrumentation.
+- Read-only Agent diagnostics and verification do not enable profiler instrumentation.
 - Instrumented mode currently targets the validated Cordis 4.0.1 compatibility behavior and fails closed when its required seam is unavailable or already owned by another runtime patch.
 - Raw event arguments, return values, error details, prompts, tool results, plugin config, file contents, credentials, and raw effect functions/disposers are not collected by the current contracts.
 - Loopback-only MCP is not a confidentiality boundary against untrusted software running on the same machine/account; broader access or authentication requires a separate design decision.
