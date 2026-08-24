@@ -88,6 +88,8 @@ try {
     'cordis_inspect_fiber',
     'cordis_search_dispatches',
     'cordis_profiler_traces',
+    'cordis_capture_checkpoint',
+    'cordis_compare_current',
   ])
   const mcpSummary = await mcpClient.callTool({ name: 'cordis_runtime_summary', arguments: {} })
   assert.equal(mcpSummary.isError, undefined)
