@@ -1,4 +1,4 @@
-import type { WaterfallExperimentId } from './experiments.js'
+import type { WaterfallExperimentId, WaterfallExperimentStatus } from './experiments.js'
 import type { FiberSnapshot } from './types.js'
 
 export type WaterfallTraceOutcome =
@@ -52,6 +52,8 @@ export interface WaterfallDispatchTrace {
 export interface WaterfallProfilerSnapshot {
   generatedAt: number
   instrumentation: WaterfallInstrumentationState
+  /** Present on v0.6+ Hosts; optional keeps older serialized profiler snapshots readable. */
+  experiment?: WaterfallExperimentStatus
   traces: WaterfallDispatchTrace[]
 }
 
