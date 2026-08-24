@@ -1,2 +1,5 @@
 export const DEVTOOLS_RPC_CHANNEL = '/cordis-devtools'
 export const DEVTOOLS_RPC_SNAPSHOT_ENDPOINT = 'snapshot'
+export const DEVTOOLS_RPC_PROFILER_SNAPSHOT_ENDPOINT = 'profiler/snapshot'
+export const DEVTOOLS_RPC_INSTRUMENTATION_ENABLE_ENDPOINT = 'instrumentation/enable'
+export const DEVTOOLS_RPC_INSTRUMENTATION_DISABLE_ENDPOINT = 'instrumentation/disable'

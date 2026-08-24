@@ -8,6 +8,12 @@ export type WaterfallTraceOutcome =
   | 'fulfilled'
   | 'rejected'
 
+export type WaterfallInstrumentationState =
+  | 'disabled'
+  | 'enabled'
+  | 'conflict'
+  | 'unsupported'
+
 export interface WaterfallNextCall {
   id: number
   calledAt: number
@@ -40,6 +46,12 @@ export interface WaterfallDispatchTrace {
   listeners: WaterfallListenerSpan[]
 }
 
+export interface WaterfallProfilerSnapshot {
+  generatedAt: number
+  instrumentation: WaterfallInstrumentationState
+  traces: WaterfallDispatchTrace[]
+}
+
 /** Upsert the latest serializable snapshot for one trace id. */
 export interface WaterfallTraceSink {
   write(trace: WaterfallDispatchTrace): void
@@ -48,4 +60,9 @@ export interface WaterfallTraceSink {
 /** Read the current bounded trace snapshots without defining transport semantics. */
 export interface WaterfallTraceReader {
   snapshot(): readonly WaterfallDispatchTrace[]
+}
+
+export interface WaterfallProfilerService {
+  profilerSnapshot(): WaterfallProfilerSnapshot
+  setInstrumentationEnabled(enabled: boolean): WaterfallProfilerSnapshot
 }
