@@ -125,6 +125,7 @@ export class RuntimeDiagnosticsQuery {
     const limit = normalizeLimit(input.limit)
     const matches = snapshot.traces
       .filter(trace => input.event === undefined || trace.event === input.event)
+      .filter(trace => input.experimentId === undefined || trace.experimentId === input.experimentId)
       .slice()
       .reverse()
     const traces = matches.slice(0, limit).map(trace => ({
