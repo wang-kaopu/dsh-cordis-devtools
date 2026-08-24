@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,9 +10,14 @@ import { chromium } from 'playwright'
 
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2'
 const DUPLICATE_EVENT = 'cordis-devtools-e2e/duplicate-listener'
+const VERIFICATION_EVENT = 'cordis-devtools-e2e/runtime-verification-duplicate'
+const VERIFICATION_FIBER_NAME = 'cordis-devtools-e2e-runtime-verification-plugin'
+const VERIFICATION_TRANSITION_FILENAME = 'cordis-devtools-e2e-runtime-verification-transition'
+const VERIFICATION_INSPECT_RESULT_FILENAME = 'cordis-devtools-e2e-runtime-verification-inspect-result.json'
 const repoRoot = process.cwd()
 const probeRoot = join(repoRoot, 'e2e', 'fixtures', 'waterfall-probe')
 const agentDebuggingProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'agent-debugging-probe')
+const runtimeVerificationProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'runtime-verification-probe')
 const inspectProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'cordis-inspect-probe')
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-cordis-devtools-e2e-'))
@@ -21,6 +26,8 @@ const mcpPort = await getFreePort()
 const baseUrl = `http://127.0.0.1:${port}`
 const mcpUrl = `http://127.0.0.1:${mcpPort}/mcp`
 const mcpPatch = join(dshHome, 'cordis-devtools-mcp.patch.yml')
+const verificationTransitionFile = join(dshHome, VERIFICATION_TRANSITION_FILENAME)
+const verificationInspectResultFile = join(dshHome, VERIFICATION_INSPECT_RESULT_FILENAME)
 const env = {
   ...process.env,
   CI: '1',
@@ -44,6 +51,10 @@ try {
   await run(pnpm, [
     'dlx', DSH_PACKAGE,
     'plugin', '--profile', 'web', 'add', agentDebuggingProbeRoot,
+  ], { env })
+  await run(pnpm, [
+    'dlx', DSH_PACKAGE,
+    'plugin', '--profile', 'web', 'add', runtimeVerificationProbeRoot,
   ], { env })
   await run(pnpm, [
     'dlx', DSH_PACKAGE,
@@ -77,6 +88,8 @@ try {
 
   await waitForServer(baseUrl, server)
   await waitForOutput('[cordis-devtools-e2e] CordisRuntime duplicate-fiber inspect OK', server)
+  await waitForOutput('[cordis-devtools-e2e] runtime verification baseline ready:', server)
+  await waitForOutput('[cordis-devtools-e2e] CordisRuntime verification baseline captured', server)
   await waitForPort(mcpPort, server)
 
   mcpClient = new Client({ name: 'dsh-cordis-devtools-real-dsh-e2e', version: '1.0.0' })
@@ -103,6 +116,32 @@ try {
   assert.equal(duplicateEvidence.byName.matches.length, 2)
   assert.equal(duplicateEvidence.dispatches.window.bounded, true)
   assert.ok(duplicateEvidence.dispatches.records.some(record => record.registeredListeners === 2))
+
+  const mcpBaselineResult = await mcpClient.callTool({
+    name: 'cordis_capture_checkpoint',
+    arguments: {
+      scope: {
+        eventNames: [VERIFICATION_EVENT],
+        fiberNames: [VERIFICATION_FIBER_NAME],
+      },
+    },
+  })
+  assert.notEqual(mcpBaselineResult.isError, true)
+  const mcpBaseline = mcpBaselineResult.structuredContent
+  assertVerificationBaseline(mcpBaseline)
+
+  await writeFile(verificationTransitionFile, 'transition\n', 'utf8')
+  await waitForOutput('[cordis-devtools-e2e] runtime verification transition complete:', server)
+  await waitForOutput('[cordis-devtools-e2e] CordisRuntime verification compare OK', server)
+
+  const mcpCompareResult = await mcpClient.callTool({
+    name: 'cordis_compare_current',
+    arguments: { baseline: mcpBaseline },
+  })
+  assert.notEqual(mcpCompareResult.isError, true)
+  const mcpVerificationSummary = summarizeVerificationComparison(mcpCompareResult.structuredContent)
+  const inspectVerificationSummary = JSON.parse(await readFile(verificationInspectResultFile, 'utf8'))
+  assert.deepEqual(mcpVerificationSummary, inspectVerificationSummary)
 
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
@@ -172,7 +211,7 @@ try {
   await panel.waitFor({ state: 'detached', timeout: 10_000 })
 
   assert.deepEqual(pageErrors, [], `browser page errors:\n${pageErrors.map(String).join('\n')}`)
-  console.log(`DSH Web + Cordis Inspect + external MCP duplicate-fiber smoke passed at ${baseUrl} / ${mcpUrl}`)
+  console.log(`DSH Web + Cordis Inspect + external MCP runtime verification smoke passed at ${baseUrl} / ${mcpUrl}`)
 } catch (error) {
   if (serverOutput.length > 0) {
     console.error('\n--- dsh web output ---\n' + serverOutput + '\n--- end dsh web output ---')
@@ -183,6 +222,60 @@ try {
   await browser?.close().catch(() => {})
   await stop(server)
   await rm(dshHome, { recursive: true, force: true })
+}
+
+function assertVerificationBaseline(checkpoint) {
+  assert.equal(checkpoint?.schemaVersion, 1)
+  assert.ok(checkpoint.events?.some(event => (
+    event.name === VERIFICATION_EVENT && event.listenerCount === 2
+  )))
+  assert.equal(checkpoint.listeners?.filter(listener => listener.event === VERIFICATION_EVENT).length, 2)
+  assert.equal(checkpoint.fibers?.filter(fiber => fiber.name === VERIFICATION_FIBER_NAME).length, 2)
+}
+
+function summarizeVerificationComparison(comparison) {
+  assert.equal(comparison?.changed, true)
+  const event = comparison.events?.find(row => (
+    row.name === VERIFICATION_EVENT
+    && row.beforeListenerCount === 2
+    && row.afterListenerCount === 1
+    && row.delta === -1
+  ))
+  const listener = comparison.listenerGroups?.find(row => (
+    row.descriptor?.event === VERIFICATION_EVENT
+    && row.descriptor?.ownerName === VERIFICATION_FIBER_NAME
+    && row.beforeCount === 2
+    && row.afterCount === 1
+    && row.delta === -1
+  ))
+  const fiber = comparison.fiberGroups?.find(row => (
+    row.descriptor?.name === VERIFICATION_FIBER_NAME
+    && row.beforeCount === 2
+    && row.afterCount === 1
+    && row.delta === -1
+  ))
+  assert.ok(event, 'missing semantic event 2 -> 1 evidence')
+  assert.ok(listener, 'missing semantic listener 2 -> 1 evidence')
+  assert.ok(fiber, 'missing semantic Fiber 2 -> 1 evidence')
+
+  return {
+    changed: true,
+    event: {
+      before: event.beforeListenerCount,
+      after: event.afterListenerCount,
+      delta: event.delta,
+    },
+    listener: {
+      before: listener.beforeCount,
+      after: listener.afterCount,
+      delta: listener.delta,
+    },
+    fiber: {
+      before: fiber.beforeCount,
+      after: fiber.afterCount,
+      delta: fiber.delta,
+    },
+  }
 }
 
 async function waitForDuplicateEvidence(client) {
