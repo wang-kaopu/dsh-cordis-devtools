@@ -11,6 +11,7 @@ import {
 } from '../src/host/mcp.js'
 import type { DevtoolsSnapshot } from '../src/shared/types.js'
 import type { WaterfallProfilerSnapshot } from '../src/shared/trace.js'
+import type { RuntimeCheckpoint } from '../src/shared/verification.js'
 
 let handle: EmbeddedMcpHandle | undefined
 let client: Client | undefined
@@ -93,7 +94,7 @@ async function closeTcpServer(server: TcpServer | undefined): Promise<void> {
 }
 
 describe('embedded MCP diagnostics', () => {
-  it('binds to loopback and exposes exactly the five read-only tools', async () => {
+  it('binds to loopback and exposes exactly seven read-only tools', async () => {
     const connected = await connect()
     expect(handle?.host).toBe('127.0.0.1')
     expect(handle?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/)
@@ -105,6 +106,8 @@ describe('embedded MCP diagnostics', () => {
       'cordis_inspect_fiber',
       'cordis_search_dispatches',
       'cordis_profiler_traces',
+      'cordis_capture_checkpoint',
+      'cordis_compare_current',
     ])
     expect(listed.tools.every(tool => tool.annotations?.readOnlyHint === true)).toBe(true)
   })
@@ -119,6 +122,29 @@ describe('embedded MCP diagnostics', () => {
 
     expect(result.isError).not.toBe(true)
     expect(result.structuredContent).toEqual(query.inspectEvent('demo/event'))
+  })
+
+  it('keeps checkpoint and comparison results in exact parity with direct RuntimeDiagnosticsQuery', async () => {
+    const query = diagnostics()
+    const connected = await connect(query)
+    const scope = { eventNames: ['demo/event'], fiberNames: ['demo'] }
+    const expectedBaseline = query.captureCheckpoint({ scope })
+
+    const captured = await connected.callTool({
+      name: 'cordis_capture_checkpoint',
+      arguments: { scope },
+    })
+    expect(captured.isError).not.toBe(true)
+    expect(captured.structuredContent).toEqual(expectedBaseline)
+
+    const baseline = captured.structuredContent as unknown as RuntimeCheckpoint
+    const compared = await connected.callTool({
+      name: 'cordis_compare_current',
+      arguments: { baseline },
+    })
+    expect(compared.isError).not.toBe(true)
+    expect(compared.structuredContent).toEqual(query.compareCurrent({ baseline: expectedBaseline }))
+    expect(compared.structuredContent).toMatchObject({ changed: false })
   })
 
   it('preserves bounded dispatch semantics and keeps profiler reads disabled', async () => {
@@ -143,16 +169,24 @@ describe('embedded MCP diagnostics', () => {
     })
   })
 
-  it('returns invalid Fiber selectors as MCP tool errors instead of mutating runtime', async () => {
+  it('returns malformed selectors and baselines as MCP tool errors instead of mutating runtime', async () => {
     const connected = await connect()
-    const result = await connected.callTool({
+    const fiber = await connected.callTool({
       name: 'cordis_inspect_fiber',
       arguments: {},
     })
-
-    expect(result.isError).toBe(true)
-    expect(result.content).toEqual(expect.arrayContaining([
+    expect(fiber.isError).toBe(true)
+    expect(fiber.content).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'text', text: expect.stringContaining('exactly one') }),
+    ]))
+
+    const compare = await connected.callTool({
+      name: 'cordis_compare_current',
+      arguments: {},
+    })
+    expect(compare.isError).toBe(true)
+    expect(compare.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'text', text: expect.stringContaining('baseline') }),
     ]))
   })
 
