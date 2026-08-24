@@ -1,3 +1,4 @@
+import type { WaterfallExperimentId } from './experiments.js'
 import type {
   DispatchMode,
   DispatchRecord,
@@ -77,6 +78,7 @@ export interface RuntimeDispatchSearchResult {
 
 export interface RuntimeProfilerTraceSearchInput {
   event?: string
+  experimentId?: WaterfallExperimentId
   limit?: number
 }
 

@@ -48,6 +48,7 @@ const profiler: WaterfallProfilerSnapshot = {
       id: 'trace-1',
       mode: 'waterfall',
       event: 'alpha',
+      experimentId: 'lease-a',
       startedAt: 10,
       returnedAt: 11,
       settledAt: 12,
@@ -70,6 +71,7 @@ const profiler: WaterfallProfilerSnapshot = {
       id: 'trace-3',
       mode: 'waterfall',
       event: 'alpha',
+      experimentId: 'lease-a',
       startedAt: 30,
       returnedAt: null,
       settledAt: null,
@@ -162,6 +164,21 @@ describe('RuntimeDiagnosticsQuery', () => {
       truncated: true,
     })
     expect(query.runtimeSummary().profiler.instrumentation).toBe('disabled')
+  })
+
+  it('filters retained profiler traces by exact experiment id while preserving bounded semantics', () => {
+    const result = createQuery().profilerTraces({ experimentId: 'lease-a' })
+
+    expect(result.traces.map(trace => trace.id)).toEqual(['trace-3', 'trace-1'])
+    expect(result.traces.every(trace => trace.experimentId === 'lease-a')).toBe(true)
+    expect(result.window).toEqual({
+      bounded: true,
+      retained: 3,
+      matched: 2,
+      returned: 2,
+      truncated: false,
+    })
+    expect(createQuery().profilerTraces({ experimentId: 'missing' }).window.matched).toBe(0)
   })
 
   it('rejects ambiguous selectors and unbounded caller limits', () => {

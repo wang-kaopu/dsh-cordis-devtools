@@ -1,3 +1,4 @@
+import type { WaterfallExperimentId } from './experiments.js'
 import type { FiberSnapshot } from './types.js'
 
 export type WaterfallTraceOutcome =
@@ -39,6 +40,8 @@ export interface WaterfallDispatchTrace {
   id: string
   mode: 'waterfall'
   event: string
+  /** Present only when an Agent lease owned instrumentation when this trace began. */
+  experimentId?: WaterfallExperimentId
   startedAt: number
   returnedAt: number | null
   settledAt: number | null

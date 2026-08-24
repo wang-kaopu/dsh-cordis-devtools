@@ -1,4 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
+import type { WaterfallExperimentId } from '../../shared/experiments.js'
 import type { FiberSnapshot } from '../../shared/types.js'
 import type {
   WaterfallDispatchTrace,
@@ -34,6 +35,8 @@ export interface ListenerTraceMetadata {
 export interface WaterfallInstrumentationOptions {
   now?: () => number
   resolveListener?: (hook: object, event: string, order: number) => ListenerTraceMetadata
+  /** Read once when a new trace is created; late updates keep the captured id. */
+  resolveExperimentId?: () => WaterfallExperimentId | undefined
 }
 
 export class WaterfallInstrumentationController {
@@ -42,6 +45,7 @@ export class WaterfallInstrumentationController {
   private readonly now: () => number
   private readonly listenerIds = new WeakMap<object, string>()
   private readonly resolveListener: (hook: object, event: string, order: number) => ListenerTraceMetadata
+  private readonly resolveExperimentId: () => WaterfallExperimentId | undefined
   private nextListenerId = 1
   private nextTraceId = 1
   private nextSpanId = 1
@@ -57,6 +61,7 @@ export class WaterfallInstrumentationController {
     this.originalDispatch = this.events.dispatch
     this.now = options.now ?? (() => performance.now())
     this.resolveListener = options.resolveListener ?? ((hook) => this.defaultListenerMetadata(hook as HookLike))
+    this.resolveExperimentId = options.resolveExperimentId ?? (() => undefined)
   }
 
   get state(): InstrumentationState {
@@ -115,11 +120,13 @@ export class WaterfallInstrumentationController {
     const filter = getFilter(thisArg)
     const hooks = this.events._hooks?.[name] ?? []
     const selected = hooks.filter(hook => hook.global === true || filter === undefined || filter.call(thisArg, hook.ctx))
+    const experimentId = this.resolveExperimentId()
     const trace: WaterfallDispatchTrace = {
       version: 1,
       id: `wf-${this.nextTraceId++}`,
       mode: 'waterfall',
       event: name,
+      ...(experimentId === undefined ? {} : { experimentId }),
       startedAt,
       returnedAt: null,
       settledAt: null,
