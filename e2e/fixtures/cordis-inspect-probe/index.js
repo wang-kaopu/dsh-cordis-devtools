@@ -2,9 +2,10 @@ export const name = 'dsh-cordis-devtools-e2e-inspect-probe'
 export const inject = ['cordisInspect']
 
 const DUPLICATE_EVENT = 'cordis-devtools-e2e/duplicate-listener'
-const DUPLICATE_FIBER_NAME = 'cordis-devtools-e2e-duplicate-plugin'
 
 export function apply(ctx) {
+  console.log('[cordis-devtools-e2e] CordisRuntime inspect probe started')
+
   ctx.effect(() => {
     let done = false
     let running = false
@@ -27,17 +28,23 @@ export function apply(ctx) {
           agent,
           signal,
         )
-        const ownerUids = event?.listeners
-          ?.filter(listener => listener.ownerLive === true && listener.owner?.uid != null)
-          .map(listener => listener.owner.uid) ?? []
-        const uniqueOwnerUids = [...new Set(ownerUids)]
-        if (event?.found !== true || event.listenerCount !== 2 || uniqueOwnerUids.length !== 2) return
+        const liveOwners = event?.listeners
+          ?.filter(listener => listener.ownerLive === true && listener.owner?.uid != null) ?? []
+        const uniqueOwnerUids = [...new Set(liveOwners.map(listener => listener.owner.uid))]
+        const uniqueOwnerNames = [...new Set(liveOwners.map(listener => listener.owner.name))]
+        if (
+          event?.found !== true
+          || event.listenerCount !== 2
+          || uniqueOwnerUids.length !== 2
+          || uniqueOwnerNames.length !== 1
+          || !uniqueOwnerNames[0]
+        ) return
 
         const byName = await ctx.cordisInspect.query(
           'host',
           'CordisRuntime',
           'inspectFiber',
-          { name: DUPLICATE_FIBER_NAME },
+          { name: uniqueOwnerNames[0] },
           agent,
           signal,
         )
@@ -72,8 +79,7 @@ export function apply(ctx) {
         )
         if (
           dispatches?.window?.bounded !== true
-          || dispatches.records?.length < 1
-          || !dispatches.records.some(record => uniqueOwnerUids.includes(record.thisFiber?.uid))
+          || !dispatches.records?.some(record => record.registeredListeners === 2)
         ) return
 
         done = true
