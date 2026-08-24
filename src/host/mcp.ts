@@ -1,5 +1,6 @@
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import type { Context } from '@deepseek-ai/cordis'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
@@ -17,6 +18,11 @@ const MCP_SERVER_INFO = { name: 'dsh-cordis-devtools', version: '0.4.0' } as con
 
 export interface EmbeddedMcpOptions {
   port?: number
+}
+
+export interface EmbeddedMcpLifecycleOptions extends EmbeddedMcpOptions {
+  /** Reject plugin activation when the MCP listener cannot start. Default false. */
+  failOnStartupError?: boolean
 }
 
 export interface EmbeddedMcpHandle {
@@ -57,6 +63,28 @@ const TOOLS: Tool[] = [
   tool('cordis_search_dispatches', 'Search the retained bounded observer dispatch window newest-first.', DISPATCH_SCHEMA),
   tool('cordis_profiler_traces', 'Read existing retained waterfall profiler traces without enabling instrumentation.', PROFILER_SCHEMA),
 ]
+
+/**
+ * Own the optional MCP listener inside the plugin Fiber without making MCP
+ * availability a prerequisite for the human DevTools/observer path by default.
+ */
+export async function installEmbeddedMcpServer(
+  ctx: Context,
+  diagnostics: RuntimeDiagnosticsQuery,
+  options: EmbeddedMcpLifecycleOptions = {},
+): Promise<void> {
+  await ctx.effect(async () => {
+    try {
+      const handle = await startEmbeddedMcpServer(diagnostics, options)
+      console.info(`[dsh-cordis-devtools] MCP diagnostics: ${handle.url}`)
+      return () => handle.close()
+    } catch (error) {
+      if (options.failOnStartupError === true) throw error
+      console.error(`[dsh-cordis-devtools] MCP diagnostics failed to start: ${errorMessage(error)}`)
+      return () => {}
+    }
+  }, 'dsh-cordis-devtools: embedded MCP diagnostics')
+}
 
 export async function startEmbeddedMcpServer(
   diagnostics: RuntimeDiagnosticsQuery,
@@ -309,6 +337,10 @@ function readOptionalNumber(row: Record<string, unknown>, key: string): number |
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${key} must be a finite number`)
   return value
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function closeHttpServer(server: ReturnType<typeof createHttpServer>): Promise<void> {
