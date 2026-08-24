@@ -1,0 +1,153 @@
+.root {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  padding: 10px 12px 14px;
+}
+
+.header,
+.listenerHead,
+.summary,
+.nextCall {
+  display: flex;
+  align-items: center;
+}
+
+.header {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.title {
+  font-size: 13px;
+}
+
+.subtitle,
+.muted,
+.elapsed,
+.summary,
+.empty,
+.emptyDetail,
+.listenerFacts dt,
+.listenerFacts dd,
+.nextCall {
+  color: var(--dsw-alias-label-secondary, #68707a);
+}
+
+.subtitle {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.traceList {
+  display: grid;
+  gap: 6px;
+}
+
+.traceRow {
+  min-width: 0;
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-2, #f7f7f8);
+}
+
+.summary {
+  margin-left: auto;
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.traceDetail {
+  display: grid;
+  gap: 8px;
+  padding: 2px 8px 8px 30px;
+}
+
+.listenerRow {
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #fff);
+}
+
+.listenerHead {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.order {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.elapsed {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.listenerFacts {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 3px 8px;
+  margin: 7px 0 0;
+}
+
+.listenerFacts > div {
+  display: contents;
+}
+
+.listenerFacts dt,
+.listenerFacts dd {
+  margin: 0;
+  font-size: 10px;
+  line-height: 18px;
+}
+
+.listenerFacts dt {
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.listenerFacts dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.nextCalls {
+  display: grid;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.nextCall {
+  gap: 8px;
+  min-height: 24px;
+  padding-left: 8px;
+  font-size: 11px;
+}
+
+.nextCall > :last-child {
+  margin-left: auto;
+}
+
+.empty,
+.emptyDetail {
+  padding: 10px 4px;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .summary > span:not(:first-child) {
+    display: none;
+  }
+
+  .traceDetail {
+    padding-left: 16px;
+  }
+}
