@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { installCordisRuntimeInspect } from './host/cordis-inspect.js'
 import { installDshExperimentTools } from './host/dsh-experiments.js'
+import { createMcpExperimentControl } from './host/mcp-experiment-control.js'
 import { DEFAULT_MCP_PORT, installEmbeddedMcpServer } from './host/mcp.js'
 import { installDevtoolsRpc } from './host/rpc.js'
 import { DevtoolsService } from './host/service.js'
@@ -57,7 +58,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       ? undefined
       : {
           enabled: config.mcp.experiments.enabled ?? false,
-          control: service,
+          control: createMcpExperimentControl(service),
         }
 
     await installEmbeddedMcpServer(ctx, service.diagnostics, {
