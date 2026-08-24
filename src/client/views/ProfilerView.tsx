@@ -43,6 +43,7 @@ export function ProfilerView({ status, traces, onOpenFiber }: ProfilerViewProps)
             return (
               <div key={trace.id} className={css.traceRow} data-trace-id={trace.id}>
                 <DisclosureRow
+                  icon={<span className={css.traceDot} aria-hidden />}
                   title={trace.event}
                   open={open}
                   expandable
