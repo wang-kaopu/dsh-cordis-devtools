@@ -24,7 +24,7 @@ The first MCP surface is read-only and exposes five tools:
 
 Tool definitions carry MCP read-only/idempotent/closed-world annotations. Successful calls return the canonical diagnostics object as `structuredContent` plus a JSON text fallback. Tool-domain validation failures become MCP tool errors rather than changing the runtime.
 
-MCP is disabled by default. Enabling it is an explicit configuration choice; bind/startup failure fails that plugin activation rather than silently binding another host or port. No non-loopback host option exists in this slice.
+MCP is disabled by default. Enabling it is an explicit configuration choice. Listener bind/startup failure is surfaced through an explicit error log but, by default, is contained to the optional MCP surface so the observer and human DevTools remain available. `mcp.failOnStartupError: true` upgrades the same failure into plugin-activation failure for deployments that require MCP availability. Neither mode silently chooses another host or port. No non-loopback host option exists in this slice.
 
 ## Alternatives considered
 
@@ -33,7 +33,8 @@ MCP is disabled by default. Enabling it is an explicit configuration choice; bin
 - Make DSH's own Agent reconnect through this MCP endpoint. Rejected because in-process DSH already has the narrower Cordis Inspect extension point and should not depend on a loopback HTTP hop.
 - Expose profiler enable/disable tools immediately. Rejected because instrumentation changes dispatch behavior and requires a separate permission/lease design.
 - Allow configurable `0.0.0.0`/LAN binding. Rejected for the first slice because runtime metadata should not be remotely exposed by default and no remote authentication model has been approved.
+- Always fail plugin activation when the MCP port is unavailable. Rejected because MCP is an optional Agent adapter and should not remove the already-working observer/UI path unless the operator explicitly requests fail-fast behavior.
 
 ## Consequences
 
-External MCP clients can inspect the same live runtime as the human DevTools and DSH-native Cordis Inspect adapter while sharing one query implementation. Running an MCP endpoint adds a local TCP listener only when explicitly enabled and adds the official MCP SDK as a runtime dependency. The first slice remains read-only and metadata-only; other local processes can still reach the loopback endpoint, so stronger authentication is a possible follow-up before any broader exposure is considered.
+External MCP clients can inspect the same live runtime as the human DevTools and DSH-native Cordis Inspect adapter while sharing one query implementation. Running an MCP endpoint adds a local TCP listener only when explicitly enabled and adds the official MCP SDK as a runtime dependency. A port conflict disables only MCP by default and remains visible in Host logs; deployments that require the endpoint can opt into fail-fast activation. The first slice remains read-only and metadata-only; other local processes can still reach the loopback endpoint, so stronger authentication is a possible follow-up before any broader exposure is considered.
