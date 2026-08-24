@@ -44,19 +44,6 @@ assert.ok(registration, 'client bundle did not register with window.__ModuleLoad
 assert.equal(registration.id, 'dsh-cordis-devtools')
 assert.equal(typeof registration.factory, 'function')
 
-const injectedCssIds = styleTags.map(tag => tag.dataset.pluginCss)
-assert.deepEqual(
-  [...injectedCssIds].sort(),
-  [
-    'dsh-cordis-devtools/src/client/DetailList.module.css',
-    'dsh-cordis-devtools/src/client/DevtoolsPanel.module.css',
-    'dsh-cordis-devtools/src/client/views/ProfilerView.module.css',
-  ].sort(),
-  'client bundle did not inject each CSS Module with a distinct style tag',
-)
-assert.equal(new Set(injectedCssIds).size, injectedCssIds.length, 'client CSS Module style ids are not unique')
-assert.ok(styleTags.every(tag => tag.textContent.length > 0), 'client CSS Module emitted an empty style tag')
-
 const react = {
   createElement() { return null },
   useEffect() {},
@@ -94,6 +81,19 @@ const plugin = registration.factory((specifier) => {
   }
   throw new Error(`unexpected client external: ${specifier}`)
 })
+
+const injectedCssIds = styleTags.map(tag => tag.dataset.pluginCss)
+assert.deepEqual(
+  [...injectedCssIds].sort(),
+  [
+    'dsh-cordis-devtools/src/client/DetailList.module.css',
+    'dsh-cordis-devtools/src/client/DevtoolsPanel.module.css',
+    'dsh-cordis-devtools/src/client/views/ProfilerView.module.css',
+  ].sort(),
+  'client bundle did not inject each CSS Module with a distinct style tag',
+)
+assert.equal(new Set(injectedCssIds).size, injectedCssIds.length, 'client CSS Module style ids are not unique')
+assert.ok(styleTags.every(tag => tag.textContent.length > 0), 'client CSS Module emitted an empty style tag')
 
 assert.equal(requestedPrimitives, true, 'client bundle did not resolve DSH UI primitives from the module table')
 assert.equal(plugin.name, 'dsh-cordis-devtools')
