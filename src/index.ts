@@ -27,6 +27,20 @@ export function apply(ctx: Context, config: Config = {}): void {
 }
 
 export type {
+  BoundedEvidenceWindow,
+  LimitedEvidenceWindow,
+  RuntimeDiagnosticsSummary,
+  RuntimeDispatchSearchInput,
+  RuntimeDispatchSearchResult,
+  RuntimeEventInspection,
+  RuntimeEventListener,
+  RuntimeFiberDetail,
+  RuntimeFiberInspection,
+  RuntimeFiberSelector,
+  RuntimeProfilerTraceSearchInput,
+  RuntimeProfilerTraceSearchResult,
+} from './shared/diagnostics.js'
+export type {
   CordisDevtoolsService,
   DevtoolsSnapshot,
   DispatchMode,
