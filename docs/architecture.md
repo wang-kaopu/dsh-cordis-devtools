@@ -2,121 +2,250 @@
 
 ## Purpose
 
-`dsh-cordis-devtools` observes the live Cordis runtime used by DeepSeek Harness and exposes stable snapshots for developer tooling. The project starts observer-first: inspection must not change the behavior being inspected.
+`dsh-cordis-devtools` exposes two deliberately separated diagnostic paths for the Cordis runtime used by DeepSeek Harness:
 
-## Layers
+1. a **default observer path** that inspects facts Cordis already exposes without changing target dispatch behavior;
+2. an **explicit opt-in waterfall instrumentation path** that measures listener/continuation execution only while the user has enabled profiling.
+
+The separation is architectural. Observer facts and profiler facts have different sources, lifecycle costs, retention, and semantic guarantees, so they do not share one transport snapshot or one browser store.
+
+## Runtime layers
 
 ```text
 Cordis runtime
     │
-    ▼
-src/host/cordis-adapter.ts
-    │  isolates Cordis internal/experimental access
-    ▼
-src/host/collector.ts
-    │  owns bounded observation state
-    ▼
-src/shared/types.ts
-    │  transport/presentation-neutral snapshots
-    ├────────────────────────► future CLI/export
-    │
-    ▼
-src/host/rpc.ts
-    │  loopback-only DSH Connection adapter
-    ▼
-/cordis-devtools/snapshot
-    │
-    ▼
-src/client/port.ts
-    │  validates the serializable snapshot boundary
-    ▼
-src/client/store.ts
-    │  one visible-only latest-snapshot refresh state
-    ▼
-src/client/DevtoolsShell.tsx
-    │  single additive sidebar DevTools shell
-    ├─ Events view
-    ├─ Timeline view
-    └─ Fibers view
-         └─ live Effects tree
-         │
-         ▼
-DSH UI primitives + package-owned CSS layout
+    ├──────────────── Observer path ───────────────────────────────┐
+    │                                                             │
+    │  ctx.events._hooks / ctx.registry / fiber.getEffects()      │
+    │  internal/dispatch / internal/plugin / internal/status      │
+    │                         │                                   │
+    │                         ▼                                   │
+    │              src/host/cordis-adapter.ts                     │
+    │                         │                                   │
+    │                         ▼                                   │
+    │                src/host/collector.ts                        │
+    │               bounded observer state                        │
+    │                                                             │
+    └──────── Explicit waterfall instrumentation ─────────────┐    │
+                                                              │    │
+                src/host/instrumentation/                     │    │
+                    waterfall-controller.ts                   │    │
+                  instance-level dispatch seam                │    │
+                              │                               │    │
+                              ▼                               │    │
+                    src/host/trace-store.ts                   │    │
+                     bounded trace snapshots                  │    │
+                              │                               │    │
+                              └──────────────┬────────────────┘    │
+                                             ▼                     ▼
+                                      src/host/service.ts
+                                       DevtoolsService
+                                      /                \
+                                     /                  \
+                                    ▼                    ▼
+                        observer snapshot RPC      profiler read/control RPC
+                         /cordis-devtools           /cordis-devtools
+                           snapshot                 profiler/snapshot
+                                                   instrumentation/*
+                              │                          │
+                              ▼                          ▼
+                    src/client/port.ts        src/client/profiler-port.ts
+                    src/client/store.ts       src/client/profiler-store.ts
+                              │                          │
+                              └──────────┬───────────────┘
+                                         ▼
+                              src/client/DevtoolsShell.tsx
+                              Events | Timeline | Fibers | Profiler
 ```
 
-### Host adapter
+All Host RPC routes use DSH Connection with `loopback` authority.
 
-`cordis-adapter.ts` is the only normal location for direct dependence on unstable Cordis implementation details such as listener registry storage. When Cordis changes an internal field, repair the adapter and keep downstream types stable where possible.
+## Observer compatibility boundary
 
-The adapter also owns normalization of compact fiber references and live fiber inventory. Known numeric Cordis lifecycle states are converted to readable labels at this boundary, so downstream code never needs to know the enum's numeric representation.
+`src/host/cordis-adapter.ts` is the narrow boundary for direct listener-registry and live-Fiber implementation details. Downstream observer code consumes project-owned snapshots instead of `_hooks` or numeric Fiber state directly.
 
-For live plugin inventory, the adapter uses Cordis' public registry path: `ctx.registry.values()` and each runtime's live `fibers`. `DevtoolsSnapshot.fibers` therefore means current live registry membership rather than a history of fibers the observer happened to encounter.
+The adapter owns:
 
-Each live fiber's labeled effect metadata is projected directly from `fiber.getEffects()` as `EffectSnapshot { label, children }`. The adapter preserves only the diagnostic label/tree shape; raw disposer/function references, config, arguments, and stacks do not cross the snapshot boundary.
+- listener enumeration/order/owner metadata from the current Cordis hook registry;
+- compact Fiber references;
+- authoritative live Fiber inventory from `ctx.registry.values()` / runtime fibers;
+- normalization of known numeric Fiber states;
+- `fiber.getEffects()` projection to recursive `EffectSnapshot { label, children }` metadata only.
 
-### Collector
+No raw disposer/function/config/arguments/stacks are copied from Effects.
 
-The collector listens to authoritative Cordis lifecycle and dispatch signals and owns bounded in-memory dispatch history. It does not maintain a second historical fiber or effect registry. Live fiber/effect data is snapped from the adapter on demand.
+## Observer collector
 
-`DispatchRecord` captures a pre-execution occurrence: runtime-local id, timestamp, invocation mode, event name, argument count, registered-listener count, and dispatch context when available. It does not prove duration, completion outcome, which listeners ultimately executed, or waterfall short-circuit behavior.
+`ObserverCollector` listens to Cordis lifecycle/dispatch signals and owns only observer state.
 
-`internal/plugin` invalidation is deferred/coalesced because Cordis clears a disposing fiber uid before removing that fiber from the runtime list. The adapter additionally excludes null-uid fibers from live inventory. Listener invalidation remains deferred because `internal/listener` fires before the hook enters `_hooks`.
+`DispatchRecord` is intentionally a **pre-execution occurrence record**. It contains:
 
-### Shared model
+- runtime-local id;
+- timestamp;
+- invocation mode;
+- event name;
+- argument count;
+- raw registered-listener count;
+- known dispatch-context Fiber metadata.
 
-`src/shared` describes facts the collector can support. A shared field is an observability contract: adding a field requires a reliable source, clear unknown/null semantics, and a decision about whether it is safe to expose to clients.
+It does not claim generic completion, executed-listener identity, listener duration, waterfall `next()` behavior, or chain-stop semantics.
 
-Event registration and dispatch remain separate concepts. `EventSnapshot` represents the current live listener registry; invocation mode remains on concrete `DispatchRecord` entries because Cordis chooses `emit`, `parallel`, `serial`, `bail`, or `waterfall` per call.
+The dispatch ring buffer is bounded. `internal/listener` invalidation is deferred because Cordis emits it before the Hook is stored; `internal/plugin` invalidation is deferred/coalesced so a disposing Fiber has left the live runtime list before a subscriber refreshes.
 
-`FiberSnapshot` is a compact reference used by listener ownership and historical dispatch context. `LiveFiberSnapshot` is a stronger live-registry record with a non-null uid plus parent, inject-name, and labeled effect-tree metadata. Historical dispatch references can outlive a fiber that no longer exists in `DevtoolsSnapshot.fibers`; that difference is deliberate. Effects remain live-only and are never copied into historical dispatch records.
+Observer mode never wraps target listener callbacks and never replaces Cordis `waterfall()` or its continuations.
 
-### Host-to-client transport
+## Waterfall instrumentation boundary
 
-The Web client does not read Host services or Cordis internals directly. `src/host/rpc.ts` projects the existing `CordisDevtoolsService.snapshot()` through DSH Connection at `/cordis-devtools/snapshot` with `loopback` authority. This adapter is read-only and contains no registry or Timeline logic.
+### Why instrumentation is separate
 
-The channel is installed through `ctx.inject(['connection'], ...)`, so Connection is optional for pure Cordis/Host use. DSH Connection owns the physical HTTP transport and lifecycle of the registered logical channel.
+`internal/dispatch` fires before public listeners execute. Per-listener entry/timing, `next()` calls, async settlement, and repeated/late continuations therefore cannot be derived truthfully from observer metadata.
 
-### Client state
+The approved v0.3 design installs instrumentation only after explicit user action.
 
-The package emits a real DSH browser module at `./client`, separate from the Node Host artifact. The browser bundle registers through `window.__ModuleLoader__`, requests the runtime services through Cordis, and keeps React plus DSH UI primitives as platform-provided module identities.
+### Seam
 
-`src/client/port.ts` is the transport compatibility seam. `src/client/store.ts` owns only the latest snapshot plus refresh/loading/stale state. The React surface renders that snapshot and contributes once to `sidebar.footer.action`; it does not maintain a second listener registry, fiber/effect registry, or incremental dispatch database.
+`WaterfallInstrumentationController` installs an **instance-level `ctx.events.dispatch` adapter** while enabled.
 
-Opening the panel fetches immediately and starts one one-second polling loop. Events/Timeline/Fibers view switching and cross-view navigation are local presentation state and do not change the refresh lifecycle. Periodic refresh is silent; closing/disposal aborts an in-flight request, stops the timer, and requests never overlap.
+The design intentionally avoids:
 
-Because the Host ring buffer is bounded and refresh is periodic, the Timeline is explicitly a recent window rather than a lossless audit stream. The Fibers view may derive a **recent dispatch-context hit count** from that bounded window, but it must not present the value as a lifetime execution count. A future watch/stream transport requires a separate decision covering revisions, gaps, reconnect, cancellation, delivery, and backpressure.
+- replacing `_hooks[].callback`, which would threaten unregister/disposer identity;
+- replacing `EventsService.waterfall()`, whose native `cbs.shift()`/continuation behavior is precisely what must remain authoritative;
+- calling original dispatch and then re-filtering Hooks, which would execute `Context.filter` twice.
 
-### Web UI boundary
+For non-waterfall modes the adapter delegates to the saved original dispatch path.
 
-Controls reuse `@deepseek-ai/dsh-client-ui-primitives` whenever the semantics match: buttons, search inputs, pills, tooltips, disclosure rows, outside-dismiss behavior, and shared icons. This lets focus/hover/control sizing and theme tokens follow DSH rather than a local imitation.
+For waterfall mode the compatibility branch mirrors the currently validated Cordis dispatch selection/filter/bind behavior and returns **dispatch-local wrapped callbacks**. `_hooks` remain untouched.
 
-DevTools-specific composition remains package-owned. `DevtoolsPanel.module.css` defines floating-panel geometry, Events/Fibers grids, Timeline list/detail layout, Effects tree indentation, and responsive behavior using `--dsw-*` tokens. The rule is **DSH atoms for shared interaction semantics, local CSS for DevTools information architecture**.
+### Listener and continuation semantics
 
-The Effects tree uses DSH `DisclosureRow` for nodes with children. Leaf effects stay non-expandable, and the UI displays only the labels/tree already present in the live snapshot; it does not infer missing effects from listeners or services.
+Each entered listener span records metadata around the real target callback. The wrapper is not `async`, so synchronous listeners are not Promise-normalized.
 
-Visual hierarchy prefers layer backgrounds, spacing, active state, and DSH primitives. Separators and high-contrast borders are not default structure; add them only where they are necessary for comprehension.
+It preserves:
 
-`@deepseek-ai/dsh-client-ui-primitives` is externalized from the browser artifact because DSH Web exposes it in the shared platform module table. The package's own CSS Module is compiled with `lightningcss` and injected by the dynamic client factory, so the external plugin does not depend on a separate stylesheet-loading path.
+- synchronous return value identity/value;
+- the same thrown error object;
+- original Promise/thenable identity returned to Cordis/caller;
+- original callback order and `this` binding;
+- repeated `next()` behavior;
+- late `next()` behavior;
+- nested/reentrant waterfall as independent traces.
+
+The last continuation argument is replaced only by a transparent traced delegate. Every observed call gets its own record and immediately delegates once to the original `next()`.
+
+The trace contract therefore records continuation facts rather than publishing an irreversible `shortCircuit`/`veto` boolean. A listener can retain `next()` and call it after returning, so “no next observed at settlement time” is not necessarily a permanent chain-stop conclusion.
+
+### Async settlement limitation
+
+To observe Promise settlement timing while returning the original Promise/thenable object, instrumentation attaches side observation. This can affect host-level handled/unhandled bookkeeping even though the caller-visible Promise identity, value/reason, and propagation are preserved by the parity suite.
+
+That trade-off exists only in explicitly enabled instrumented mode. The default observer path installs no such observation.
+
+### Compatibility and fail-closed behavior
+
+Enable checks the expected Cordis runtime seam before patching. Disable restores the previous instance descriptor/implementation only if DevTools still owns the installed wrapper.
+
+If another component replaces `dispatch` while instrumentation is enabled, DevTools does not overwrite it during cleanup. The controller exposes `conflict` and fails closed.
+
+Supported state is explicit:
+
+- `disabled` — default, no DevTools dispatch patch;
+- `enabled` — DevTools waterfall adapter currently owns the seam;
+- `conflict` — another runtime patch owns the seam, so DevTools will not force recovery;
+- `unsupported` — required compatibility assumptions are not available.
+
+The current compatibility target is the validated Cordis 4.0.1 behavior. A later Cordis version is not considered supported merely because TypeScript still compiles; the behavior/parity matrix must pass first.
+
+## Trace contract and storage
+
+`src/shared/trace.ts` is the serializable instrumentation contract. It exposes only metadata needed for v0.3:
+
+- `WaterfallDispatchTrace`: trace id, event, start/return/settle timing facts, outcome, ordered listener spans;
+- `WaterfallListenerSpan`: listener id, owner reference, dispatch order, entered/return/settle facts, outcome, `nextCalls`;
+- `WaterfallNextCall`: call index plus called/returned/settled facts and outcome;
+- profiler instrumentation state.
+
+It intentionally does **not** contain raw listener arguments, return values, error objects/messages, prompts, tool results, file contents, plugin config, credentials, `selfTime`, or definitive short-circuit/veto fields.
+
+`WaterfallTraceStore` keeps a bounded set of serializable trace snapshots. Writes are upserts because a trace may gain additional settlement or late-continuation facts after the first snapshot is observed. Retention is bounded by `maxTraces`; the store is not a persistent database or lossless audit stream.
+
+## Host service and transport separation
+
+`DevtoolsService` composes:
+
+- `ObserverCollector`;
+- `WaterfallTraceStore`;
+- `WaterfallInstrumentationController`.
+
+The existing observer service surface remains available through `snapshot()`, `clearDispatches()`, and `subscribe()`.
+
+Profiler reads/control are separate:
+
+- `profiler/snapshot` returns `{ generatedAt, instrumentation, traces }`;
+- `instrumentation/enable` explicitly enables the controller;
+- `instrumentation/disable` explicitly disables it.
+
+All live under the same `/cordis-devtools` Connection channel with loopback authority, but the observer snapshot never silently grows instrumented traces. That keeps normal one-second observer polling independent from profiler trace retention/transport.
+
+Plugin disposal attempts to disable a DevTools-owned instrumentation patch. Conflict semantics remain fail-closed.
+
+## Client state
+
+### Observer store
+
+`EventExplorerStore` owns one latest observer snapshot plus loading/stale/error state.
+
+Opening the panel fetches immediately and starts one one-second observer poller. Events/Timeline/Fibers switching and cross-navigation are local UI state and do not create additional observer pollers. Periodic refresh is silent; closing/disposal aborts an in-flight request and stops the timer.
+
+### Profiler store
+
+`ProfilerStore` is independent. It activates only while the panel is open **and** the Profiler tab is selected.
+
+Opening Profiler performs a read-only `profiler/snapshot`. It never calls enable automatically.
+
+An explicit enable/disable mutation:
+
+- can abort a background profiler read so the user action is not lost;
+- uses the Host-returned profiler snapshot immediately;
+- keeps button text stable while busy;
+- preserves the previous successful snapshot and marks it stale on failure.
+
+Switching away or closing the panel stops profiler polling and aborts the active profiler request.
+
+## Web UI boundary
+
+The shell contributes once to `sidebar.footer.action` and owns four views:
+
+- **Events** — current listener registry;
+- **Timeline** — bounded observer dispatch occurrence window;
+- **Fibers** — authoritative live Fiber/effect inventory;
+- **Profiler** — bounded opt-in waterfall execution traces.
+
+Cross-navigation uses live inventory as the authority. Historical owner/context metadata stays readable but becomes non-navigable when its uid no longer exists in `DevtoolsSnapshot.fibers`.
+
+Controls reuse `@deepseek-ai/dsh-client-ui-primitives` when semantics match: Button, Input, Pill, Tooltip, DisclosureRow, outside-dismiss behavior, and icons. Package-owned CSS handles DevTools information architecture using DSH tokens. Nonessential high-contrast borders/dividers are avoided.
 
 ## Core invariants
 
-1. **Observer mode is behavior-neutral.** It registers observers but does not wrap target listeners, replace `next()`, reorder hooks, or mutate dispatched arguments.
-2. **Unknown stays unknown.** Derived values are labeled as derived; unsupported values are absent/null rather than fabricated.
-3. **Collection is bounded.** Timeline-like structures have fixed or configured retention, and bounded views do not claim audit-log completeness.
-4. **Metadata-first privacy.** Raw event arguments, prompts, tool results, plugin config, file contents, credentials, and raw effect functions/disposers are not collected by default.
-5. **Lifecycle ownership is explicit.** Every observer/subscription/channel/timer is disposed with the owning plugin or UI lifecycle.
-6. **Transport does not become a second source of truth.** Host RPC returns the collector snapshot; Client code does not recreate Cordis semantics.
-7. **UI reuse follows semantics.** Prefer DSH primitives for shared controls and behavior; keep only domain-specific composition local.
-8. **Live inventory stays live.** `DevtoolsSnapshot.fibers` and their effects reflect current Cordis runtime metadata; historical dispatch references do not get promoted into the live list.
-
-## Instrumented mode boundary
-
-Per-listener latency, `next()` tracking, short-circuit attribution, self time, downstream time, input/output diffs, and generic completion outcomes require executing code around target listeners. Those features are not an incremental tweak to observer mode: they are a separate instrumented mode because instrumentation can perturb timing and semantics.
-
-Before adding that mode, create or update an architecture Agent Note covering wrapping strategy, recursion/reentrancy, async error propagation, disposal, ordering preservation, overhead, privacy, and a way to prove the uninstrumented path is unchanged.
+1. **Observer mode is behavior-neutral.** Installing/opening/polling never wraps target listeners or patches waterfall dispatch.
+2. **Instrumentation is explicit.** Entering the Profiler is read-only; only the visible enable action installs the adapter.
+3. **Unknown stays unknown.** Unsupported/incomplete facts are absent or shown as current observations rather than fabricated conclusions.
+4. **Histories are bounded.** Observer dispatches and profiler traces have independent configured retention limits.
+5. **Metadata-first privacy.** Raw event/listener payloads, return values, error details, prompts, tool results, plugin config, file contents, credentials, and raw effects do not cross the current contracts.
+6. **Lifecycle ownership is explicit.** Observers, channels, timers, client pollers, and instrumentation cleanup are tied to owning plugin/UI lifecycles.
+7. **Transport is not a second source of truth.** Host produces the snapshots; browser code validates and presents rather than reconstructing Cordis execution semantics.
+8. **Live inventory stays live.** Historical Fiber references do not get promoted into authoritative current inventory.
+9. **Instrumentation fails closed.** Unsupported/conflicting runtime seams are surfaced instead of silently patched or forcibly restored.
+10. **Profiler timing stays factual.** v0.3 exposes entered/returned/settled and `next()` observations, not an undefined `selfTime` or irreversible chain-stop boolean.
 
 ## Testing layers
 
-Pure helpers use unit tests. Runtime ownership, hook behavior, live registry semantics, and effect-tree projection use real `@deepseek-ai/cordis`. Host-to-client adapters get contract tests at the Connection seam. Visible UI gets jsdom/React integration coverage using the real DSH UI primitives through Vitest's Vite transform. The built browser artifact is executed by `verify:client-bundle` to prove the actual `window.__ModuleLoader__` handoff and platform primitive request work rather than relying only on source-level tests.
+- Unit tests cover ring buffers, trace store, validators, and pure parity helpers.
+- Real `@deepseek-ai/cordis` integration tests cover listener/Fiber/effect behavior, waterfall behavior matrix, instrumentation lifecycle, conflict handling, and bounded metadata-only traces.
+- The I3 paired parity suite runs the same caller-visible scenarios with instrumentation absent vs enabled and compares return/error/order/`this`/side-effect facts.
+- The I3 overhead harness records representative disabled/enabled samples as evidence without imposing a noisy hosted-runner percentage budget.
+- Host RPC tests verify observer/profiler endpoint separation and loopback registration.
+- jsdom/React integration tests use the real DSH UI primitive package and cover profiler read/toggle/navigation lifecycle.
+- `verify:client-bundle` executes the built client handoff through `window.__ModuleLoader__`.
+- Real DSH Web E2E installs the current checkout into a disposable profile. For v0.3 it also installs an E2E-only Cordis waterfall probe fixture so Chromium can deterministically verify `disabled → enable → real Host waterfall trace → expand/inspect → disable` without a model call or API key.
 
-The independent real DSH Web smoke installs the current checkout through the published DSH CLI into a disposable profile, boots DSH Web, completes supported onboarding, opens the sidebar DevTools surface in Chromium, and checks the composed Events/Timeline/Fibers path including the Effects surface. It validates external-plugin composition rather than duplicating detailed component assertions.
+The E2E probe lives under `e2e/fixtures` and is not included by the package `files` list, so it is not part of the production plugin bundle/runtime.
