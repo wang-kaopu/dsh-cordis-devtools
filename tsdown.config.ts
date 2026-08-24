@@ -64,7 +64,7 @@ export default defineConfig([
     dts: true,
     clean: true,
     deps: {
-      neverBundle: ['@deepseek-ai/cordis'],
+      neverBundle: ['@deepseek-ai/cordis', '@modelcontextprotocol/sdk'],
     },
   },
   {

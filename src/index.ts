@@ -1,19 +1,31 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { installCordisRuntimeInspect } from './host/cordis-inspect.js'
+import { DEFAULT_MCP_PORT, installEmbeddedMcpServer } from './host/mcp.js'
 import { installDevtoolsRpc } from './host/rpc.js'
 import { DevtoolsService } from './host/service.js'
 
 export const name = 'dsh-cordis-devtools'
 export const provide = 'cordisDevtools'
 
+export interface McpConfig {
+  /** Expose read-only runtime diagnostics to external MCP clients. Default false. */
+  enabled?: boolean
+  /** Loopback TCP port. Default 43127. Use 0 only for programmatic ephemeral-port tests. */
+  port?: number
+  /** Reject plugin activation if the MCP listener cannot start. Default false. */
+  failOnStartupError?: boolean
+}
+
 export interface Config {
   /** Maximum number of recent dispatch records kept in memory. */
   maxDispatches?: number
   /** Maximum number of bounded waterfall profiler traces kept in memory. */
   maxTraces?: number
+  /** Optional external-agent MCP endpoint; always bound to 127.0.0.1. */
+  mcp?: McpConfig
 }
 
-export function apply(ctx: Context, config: Config = {}): void {
+export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   const service = new DevtoolsService(ctx, {
     maxDispatches: config.maxDispatches,
     maxTraces: config.maxTraces,
@@ -26,6 +38,13 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.provide('cordisDevtools', service)
   installDevtoolsRpc(ctx, service)
   installCordisRuntimeInspect(ctx, service.diagnostics)
+
+  if (config.mcp?.enabled === true) {
+    await installEmbeddedMcpServer(ctx, service.diagnostics, {
+      port: config.mcp.port ?? DEFAULT_MCP_PORT,
+      failOnStartupError: config.mcp.failOnStartupError ?? false,
+    })
+  }
 }
 
 export type {
