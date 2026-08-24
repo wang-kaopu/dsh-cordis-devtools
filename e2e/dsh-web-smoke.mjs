@@ -10,7 +10,6 @@ import { chromium } from 'playwright'
 
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2'
 const DUPLICATE_EVENT = 'cordis-devtools-e2e/duplicate-listener'
-const DUPLICATE_FIBER_NAME = 'cordis-devtools-e2e-duplicate-plugin'
 const repoRoot = process.cwd()
 const probeRoot = join(repoRoot, 'e2e', 'fixtures', 'waterfall-probe')
 const agentDebuggingProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'agent-debugging-probe')
@@ -95,7 +94,7 @@ try {
   assert.equal(new Set(duplicateEvidence.ownerUids).size, 2)
   assert.equal(duplicateEvidence.byName.matches.length, 2)
   assert.equal(duplicateEvidence.dispatches.window.bounded, true)
-  assert.ok(duplicateEvidence.dispatches.records.length >= 1)
+  assert.ok(duplicateEvidence.dispatches.records.some(record => record.registeredListeners === 2))
 
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
@@ -186,15 +185,21 @@ async function waitForDuplicateEvidence(client) {
       arguments: { name: DUPLICATE_EVENT },
     })
     const event = eventResult.structuredContent
-    const ownerUids = event?.listeners
-      ?.filter(listener => listener.ownerLive === true && listener.owner?.uid != null)
-      .map(listener => listener.owner.uid) ?? []
-    const uniqueOwnerUids = [...new Set(ownerUids)]
+    const liveOwners = event?.listeners
+      ?.filter(listener => listener.ownerLive === true && listener.owner?.uid != null) ?? []
+    const uniqueOwnerUids = [...new Set(liveOwners.map(listener => listener.owner.uid))]
+    const uniqueOwnerNames = [...new Set(liveOwners.map(listener => listener.owner.name))]
 
-    if (event?.found === true && event.listenerCount === 2 && uniqueOwnerUids.length === 2) {
+    if (
+      event?.found === true
+      && event.listenerCount === 2
+      && uniqueOwnerUids.length === 2
+      && uniqueOwnerNames.length === 1
+      && uniqueOwnerNames[0]
+    ) {
       const byNameResult = await client.callTool({
         name: 'cordis_inspect_fiber',
-        arguments: { name: DUPLICATE_FIBER_NAME },
+        arguments: { name: uniqueOwnerNames[0] },
       })
       const byName = byNameResult.structuredContent
       const fibersMatch = byName?.matches?.length === 2
@@ -227,7 +232,7 @@ async function waitForDuplicateEvidence(client) {
         const dispatches = dispatchResult.structuredContent
         if (
           dispatches?.window?.bounded === true
-          && dispatches.records?.some(record => uniqueOwnerUids.includes(record.thisFiber?.uid))
+          && dispatches.records?.some(record => record.registeredListeners === 2)
         ) {
           return { event, ownerUids: uniqueOwnerUids, byName, dispatches }
         }
