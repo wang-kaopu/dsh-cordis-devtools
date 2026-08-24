@@ -107,8 +107,7 @@ export class WaterfallInstrumentationController {
   private dispatchWaterfall(args: unknown[]): DispatchCallback[] {
     const startedAt = this.now()
     const thisArg = isObjectLike(args[0]) ? args.shift() : null
-    const nameValue = args.shift()
-    const name = String(nameValue)
+    const name = args.shift() as string
     if (!name.startsWith('internal/')) {
       this.events.emit('internal/dispatch', 'waterfall', name, args, thisArg)
     }
