@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { DEFAULT_MCP_PORT, startEmbeddedMcpServer } from './host/mcp.js'
+import { DEFAULT_MCP_PORT, installEmbeddedMcpServer } from './host/mcp.js'
 import { installDevtoolsRpc } from './host/rpc.js'
 import { DevtoolsService } from './host/service.js'
 
@@ -11,6 +11,8 @@ export interface McpConfig {
   enabled?: boolean
   /** Loopback TCP port. Default 43127. Use 0 only for programmatic ephemeral-port tests. */
   port?: number
+  /** Reject plugin activation if the MCP listener cannot start. Default false. */
+  failOnStartupError?: boolean
 }
 
 export interface Config {
@@ -36,13 +38,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   installDevtoolsRpc(ctx, service)
 
   if (config.mcp?.enabled === true) {
-    await ctx.effect(async () => {
-      const handle = await startEmbeddedMcpServer(service.diagnostics, {
-        port: config.mcp?.port ?? DEFAULT_MCP_PORT,
-      })
-      console.info(`[dsh-cordis-devtools] MCP diagnostics: ${handle.url}`)
-      return () => handle.close()
-    }, 'dsh-cordis-devtools: embedded MCP diagnostics')
+    await installEmbeddedMcpServer(ctx, service.diagnostics, {
+      port: config.mcp.port ?? DEFAULT_MCP_PORT,
+      failOnStartupError: config.mcp.failOnStartupError ?? false,
+    })
   }
 }
 
