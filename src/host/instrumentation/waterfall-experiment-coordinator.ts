@@ -75,10 +75,11 @@ export class WaterfallExperimentCoordinator {
       return { outcome: 'conflict', lease: null, status: this.status() }
     }
     if (!this.instrumentation.enable()) {
+      const status = this.status()
       return {
-        outcome: this.instrumentation.state === 'unsupported' ? 'unsupported' : 'conflict',
+        outcome: status.instrumentation === 'unsupported' ? 'unsupported' : 'conflict',
         lease: null,
-        status: this.status(),
+        status,
       }
     }
 
