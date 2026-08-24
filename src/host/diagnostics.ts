@@ -11,6 +11,18 @@ import type {
 } from '../shared/diagnostics.js'
 import type { DevtoolsSnapshot } from '../shared/types.js'
 import type { WaterfallProfilerSnapshot } from '../shared/trace.js'
+import {
+  RUNTIME_CHECKPOINT_SCHEMA_VERSION,
+  type RuntimeCheckpoint,
+  type RuntimeCheckpointCaptureInput,
+  type RuntimeCheckpointCompareInput,
+  type RuntimeCheckpointComparison,
+} from '../shared/verification.js'
+import {
+  captureRuntimeCheckpoint,
+  computeRuntimeCheckpointDigest,
+} from './verification/checkpoint.js'
+import { compareRuntimeCheckpoints } from './verification/diff.js'
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
@@ -136,6 +148,24 @@ export class RuntimeDiagnosticsQuery {
         truncated: matches.length > traces.length,
       },
     }
+  }
+
+  captureCheckpoint(input: RuntimeCheckpointCaptureInput = {}): RuntimeCheckpoint {
+    return captureRuntimeCheckpoint(this.source.snapshot(), input)
+  }
+
+  compareCurrent(input: RuntimeCheckpointCompareInput): RuntimeCheckpointComparison {
+    const baseline = input?.baseline
+    if (!baseline) throw new TypeError('compareCurrent requires a baseline checkpoint')
+    if (baseline.schemaVersion !== RUNTIME_CHECKPOINT_SCHEMA_VERSION) {
+      throw new RangeError(`Unsupported baseline checkpoint schema version: ${baseline.schemaVersion}`)
+    }
+    if (computeRuntimeCheckpointDigest(baseline) !== baseline.digest) {
+      throw new TypeError('baseline checkpoint digest does not match checkpoint body')
+    }
+
+    const current = captureRuntimeCheckpoint(this.source.snapshot(), { scope: baseline.scope })
+    return compareRuntimeCheckpoints(baseline, current)
   }
 
   private describeFiber(snapshot: DevtoolsSnapshot, fiber: DevtoolsSnapshot['fibers'][number]): RuntimeFiberDetail {
