@@ -88,6 +88,20 @@ describe('embedded MCP live experiment integration', () => {
       }),
     ])
 
+    // External clients must get the same exact filter through the MCP schema and
+    // delegation rather than relying on a timestamp or reading the Host directly.
+    const tracesCall = await connected.callTool({
+      name: 'cordis_profiler_traces',
+      arguments: { event: 'devtools/mcp-live-experiment', experimentId: leaseId, limit: 20 },
+    })
+    expect(tracesCall.isError).not.toBe(true)
+    expect(structured<{ traces: Array<{ event: string; experimentId?: string }> }>(tracesCall).traces).toEqual([
+      expect.objectContaining({
+        event: 'devtools/mcp-live-experiment',
+        experimentId: leaseId,
+      }),
+    ])
+
     const statusCall = await connected.callTool({
       name: 'cordis_waterfall_experiment_status',
       arguments: {},
