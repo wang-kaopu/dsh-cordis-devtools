@@ -1,6 +1,6 @@
 # Agent Runtime Diagnostics
 
-This guide describes the v0.4 Agent-facing shape. The implementation is split across the Runtime Diagnostics Query, DSH Cordis Inspect, and embedded MCP workstreams; repository planning documents may land before every implementation PR reaches `main`.
+This guide describes the completed first v0.4 read-only Agent-facing slice. Human DevTools, DSH Cordis Inspect, and embedded MCP now share one Runtime Diagnostics Query contract; controlled profiler mutation remains explicitly deferred.
 
 ## What Agent access adds
 
@@ -68,7 +68,7 @@ Example conceptual query:
 
 The first-party `cordisInspect` registry is provided by DSH Cordis Host Runner and its generic model tools are provided by DSH Tool Cordis. A composition that wants model-native inspection therefore needs the corresponding DSH Cordis tooling enabled; `dsh-cordis-devtools` does not duplicate those packages.
 
-The v0.4 integration suite also exercises the Provider against the real DSH Host registry: the probe discovers `CordisRuntime`, performs `inspectEvent`, and verifies the returned listener owner is still present in authoritative live Fiber inventory.
+The v0.4 integration suite exercises the Provider against the real DSH Host registry and the duplicate-Fiber fixture: it discovers `CordisRuntime`, confirms two current listener owners, resolves both authoritative live Fibers, and preserves bounded dispatch semantics.
 
 ## External Agent path — MCP
 
@@ -125,7 +125,7 @@ Agent
 
 The important difference is that the Agent no longer has to infer listener multiplicity from source-level `ctx.on(...)` calls.
 
-The protocol integration tests use the official MCP SDK client. In addition to in-process canonical-result parity tests, a real DSH Web smoke enables MCP in the running Host and connects from the test process over loopback before continuing the existing human UI/profiler assertions.
+The protocol suite uses the official MCP SDK Client. Its final real DSH smoke first proves the DSH Cordis Inspect path against the duplicate-Fiber fixture, then connects an external MCP Client to the same Host and recovers the same evidence, and finally continues the existing human Web UI/profiler assertions. All three consumers therefore observe one running runtime.
 
 ## Evidence semantics an Agent must preserve
 
@@ -180,14 +180,17 @@ The expected evidence chain is:
 inspectEvent
   → two current listeners
   → owner uid A + owner uid B
+  → one shared runtime owner name
 inspectFiber(name)
   → two authoritative live Fibers
 inspectFiber(uid A / uid B)
   → each Fiber owns the event
 searchDispatches
-  → recent occurrences newest-first
-  → bounded: true
+  → bounded recent occurrence evidence
+  → an observed record reports registeredListeners = 2
 ```
+
+Listener ownership comes from the current listener/Fiber registry. Dispatch context is not treated as listener ownership; dispatch history only contributes bounded recent evidence that the event was observed while two listeners were registered.
 
 If a query limit omits a currently retained match, `truncated: true` is returned separately from the bounded-retention signal. This is the key distinction that prevents an Agent from turning recent runtime evidence into a claim about complete history.
 
