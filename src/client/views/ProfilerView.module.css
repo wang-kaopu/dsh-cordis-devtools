@@ -51,6 +51,14 @@
   background: var(--dsw-alias-bg-layer-2, #f7f7f8);
 }
 
+.traceDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--dsw-alias-label-secondary, #68707a);
+}
+
 .summary {
   margin-left: auto;
   min-width: 0;
