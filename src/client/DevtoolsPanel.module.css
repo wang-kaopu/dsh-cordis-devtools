@@ -351,7 +351,7 @@
 .fiberStats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start;
+  align-items: stretch;
   gap: 8px;
   margin: 12px 0 16px;
 }
@@ -371,7 +371,9 @@
 }
 
 .fiberStatLabel {
+  font-size: 10px;
   line-height: 1.35;
+  white-space: nowrap;
 }
 
 .fiberFacts {
