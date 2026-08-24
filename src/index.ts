@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { installCordisRuntimeInspect } from './host/cordis-inspect.js'
 import { DEFAULT_MCP_PORT, installEmbeddedMcpServer } from './host/mcp.js'
 import { installDevtoolsRpc } from './host/rpc.js'
 import { DevtoolsService } from './host/service.js'
@@ -36,6 +37,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   )
   ctx.provide('cordisDevtools', service)
   installDevtoolsRpc(ctx, service)
+  installCordisRuntimeInspect(ctx, service.diagnostics)
 
   if (config.mcp?.enabled === true) {
     await installEmbeddedMcpServer(ctx, service.diagnostics, {
