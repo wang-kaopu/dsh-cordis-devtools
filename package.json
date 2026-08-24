@@ -25,7 +25,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e:web": "node e2e/dsh-web-smoke.mjs",
+    "test:e2e:web": "node e2e/dsh-web-smoke.mjs && node e2e/controlled-experiment-smoke.mjs",
     "check": "pnpm typecheck && pnpm test",
     "verify:notes": "node scripts/verify-agent-notes.mjs",
     "verify:note-required": "node scripts/verify-note-required.mjs",

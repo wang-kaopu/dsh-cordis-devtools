@@ -85,6 +85,7 @@ const DISPATCH_SCHEMA = objectSchema({
 })
 const PROFILER_SCHEMA = objectSchema({
   event: { type: 'string', description: 'Exact waterfall event name filter.' },
+  experimentId: { type: 'string', description: 'Exact controlled experiment/lease id filter.' },
   limit: { type: 'number', description: 'Maximum returned traces, 1 through 100.' },
 })
 const CHECKPOINT_SCOPE_SCHEMA = {
@@ -297,9 +298,11 @@ function createProtocolServer(
         }
         case 'cordis_profiler_traces': {
           const event = readOptionalString(args, 'event')
+          const experimentId = readOptionalString(args, 'experimentId')
           const limit = readOptionalNumber(args, 'limit')
           value = diagnostics.profilerTraces({
             ...(event === undefined ? {} : { event }),
+            ...(experimentId === undefined ? {} : { experimentId }),
             ...(limit === undefined ? {} : { limit }),
           })
           break
