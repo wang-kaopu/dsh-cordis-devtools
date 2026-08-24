@@ -1,7 +1,7 @@
 {
   "name": "dsh-cordis-devtools",
-  "version": "0.5.0",
-  "description": "Runtime diagnostics and verification with opt-in waterfall profiling for DeepSeek Harness / Cordis.",
+  "version": "0.6.0",
+  "description": "Runtime diagnostics, verification, and controlled waterfall experiments for DeepSeek Harness / Cordis.",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -54,6 +54,7 @@
     "profiler",
     "runtime-diagnostics",
     "runtime-verification",
+    "controlled-runtime-experiments",
     "mcp",
     "agentic",
     "plugin"

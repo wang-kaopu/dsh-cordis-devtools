@@ -1,49 +1,48 @@
-# Agent Runtime Diagnostics and Verification
+# Agent Runtime Diagnostics, Verification, and Controlled Experiments
 
-This guide describes the completed read-only Agent-facing surface through repository version `0.5.0`. Human DevTools, DSH Cordis Inspect, and embedded MCP share one Runtime Diagnostics Query contract; v0.5 adds caller-owned checkpoints and semantic before/after comparison. Controlled profiler mutation remains explicitly deferred.
+This guide describes the repository-level `0.6.0` Agent surface. Runtime Diagnostics and Runtime Verification remain read-only; v0.6 adds one separately authority-gated mutation: a finite waterfall profiling experiment owned by the shared Host coordinator.
 
 ## What Agent access adds
 
-Agent access exposes **live runtime evidence** that source reading and API catalogs cannot prove:
+Live runtime evidence can prove facts source reading alone cannot:
 
-- current listener multiplicity and order;
-- current listener → owner Fiber relationships;
-- authoritative live Fiber state, inject metadata, Effects, and owned registrations;
-- recent dispatch occurrences inside the retained bounded observer window;
-- already-recorded waterfall profiler traces;
-- canonical current-topology checkpoints;
-- semantic before/after Event / Listener / Fiber multiplicity changes.
+- current listener multiplicity/order and owner Fibers;
+- authoritative live Fiber/inject/Effect/owned-registration state;
+- recent dispatch occurrences inside a bounded retained window;
+- retained waterfall traces and exact Agent experiment attribution;
+- canonical caller-owned topology checkpoints;
+- semantic before/after Event/Listener/Fiber multiplicity changes;
+- current Human/Agent waterfall instrumentation owner and lease expiry.
 
-It does not replace source analysis. An Agent should combine runtime evidence with source, tests, and logs when reasoning about a bug.
+It does not replace source analysis. Agents should combine runtime evidence with source, tests, and logs, and must not convert bounded observations into complete-history or root-cause claims.
 
-## Shared query vocabulary
+## Read-only query vocabulary
 
-Both DSH-native and MCP adapters represent the same seven logical read operations:
+DSH Cordis Inspect and MCP share the same Host-owned semantics:
 
 | Logical query | Purpose |
 | --- | --- |
-| `runtimeSummary` | Discover compact counts and current bounded evidence windows. |
-| `inspectEvent` | Inspect current registrations for one exact event. |
-| `inspectFiber` | Inspect authoritative live Fiber state by uid or exact name. |
-| `searchDispatches` | Search retained observer dispatch occurrences newest-first. |
-| `profilerTraces` | Read already-recorded waterfall traces without enabling instrumentation. |
-| `captureCheckpoint` | Return a caller-owned versioned checkpoint of authoritative current topology. |
-| `compareCurrent` | Validate a supplied baseline, recapture the same scope, and return a semantic diff plus current checkpoint. |
+| `runtimeSummary` | Compact live counts and bounded evidence metadata. |
+| `inspectEvent` | Current registrations for one exact event. |
+| `inspectFiber` | Authoritative live Fiber state by uid or exact name. |
+| `searchDispatches` | Retained observer dispatch occurrences newest-first. |
+| `profilerTraces` | Retained profiler traces, optionally exact-filtered by `experimentId`. |
+| `captureCheckpoint` | Caller-owned versioned checkpoint of current topology. |
+| `compareCurrent` | Compare a supplied baseline with fresh current topology. |
+| `waterfallExperimentStatus` | Read current instrumentation owner/lease facts. |
 
-The adapters use different protocol-facing names where appropriate, but the returned facts and verification semantics are shared.
+None of these operations enables instrumentation.
 
-## DSH Agent path
+## DSH read path
 
-DSH already owns the model-facing Cordis Inspect tools. `dsh-cordis-devtools` therefore contributes a Provider rather than registering another model tool family.
-
-When a DSH composition includes the first-party Cordis Inspect infrastructure, the Provider is discoverable as:
+When DSH includes its first-party Cordis Inspect infrastructure, the plugin registers:
 
 ```text
 platform: host
 provider: CordisRuntime
 ```
 
-A model normally follows the existing DSH flow:
+The normal model path remains:
 
 ```text
 cordis_inspect_list
@@ -53,32 +52,73 @@ find CordisRuntime
 cordis_inspect_query
 ```
 
-Example conceptual query:
+`CordisRuntime` stays an inspection Provider. v0.6 does **not** put mutation methods on it.
 
-```json
-{
-  "platform": "host",
-  "provider": "CordisRuntime",
-  "method": "inspectEvent",
-  "input": {
-    "name": "session/created"
-  }
-}
+## Runtime Verification
+
+An Agent can preserve a focused baseline before normal development work:
+
+```text
+captureCheckpoint(scope?)
+        ↓
+caller keeps returned checkpoint
+        ↓
+edit / normal reload workflow
+        ↓
+compareCurrent({ baseline })
 ```
 
-`CordisRuntime` is optional. Pure Cordis deployments without DSH `cordisInspect` continue to use the human DevTools/ordinary service API without an Agent Provider.
+Checkpoints are self-contained JSON values, not server-side ids. They include authoritative current Event/Listener/live-Fiber topology and metadata-only Effects; bounded dispatch/profiler history is excluded.
 
-### DSH composition note
+Cross-checkpoint identity is semantic rather than runtime-local:
 
-The first-party `cordisInspect` registry is provided by DSH Cordis Host Runner and its generic model tools are provided by DSH Tool Cordis. A composition that wants model-native inspection therefore needs the corresponding DSH Cordis tooling enabled; `dsh-cordis-devtools` does not duplicate those packages.
+- listener id, registration order, owner/Fiber uid are capture-local evidence;
+- Listener groups use event + owner name + `prepend` + `global`;
+- Fiber groups use canonical current metadata;
+- equivalent duplicates compare as multiplicities such as `2 → 1`.
 
-The v0.5 real-DSH suite exercises this actual Host registry, captures a verification baseline through `CordisRuntime`, carries it across a real duplicate-Fiber lifecycle transition, and compares the fresh current runtime through the same Provider.
+`compareCurrent` reports mechanical changes only. It does not claim `fixed`, `rootCause`, or confidence.
 
-## External Agent path — MCP
+## DSH controlled experiment path
 
-External coding agents connect to an MCP server embedded in the **same running DSH Host process** that owns the Cordis runtime.
+v0.6 registers two dedicated DSH tools:
 
-The server is disabled by default. The intended configuration shape is:
+```text
+cordis_start_waterfall_experiment
+cordis_stop_waterfall_experiment
+```
+
+Start is a mutation. Its body requests one-shot approval through the real DSH `ctx.approval` service before touching the shared coordinator. Only `allowed-once` proceeds; rejection, cancellation, unavailable/missing approval, or missing Agent identity fail closed.
+
+A successful start returns a finite lease with an opaque `leaseId` and expiry. Default TTL is 15 seconds and the maximum supported TTL is 60 seconds. There is no renewal or indefinite lease in v0.6.
+
+Stop needs no second approval because it can only end the exact active lease. A stale/wrong lease id performs no mutation.
+
+Recommended flow:
+
+```text
+cordis_start_waterfall_experiment({ ttlMs? })
+        ↓
+leaseId
+        ↓
+reproduce one waterfall behavior
+        ↓
+read profilerTraces({ experimentId: leaseId })
+        ↓
+cordis_stop_waterfall_experiment({ leaseId })
+        ↓
+status confirms disabled/no Agent owner
+```
+
+If the Agent disappears, TTL cleanup rechecks exact ownership before disabling.
+
+## External MCP path
+
+The MCP server runs inside the same DSH Host process and is disabled by default.
+
+### Read-only compatibility
+
+The original configuration remains:
 
 ```yaml
 - id: dsh-cordis-devtools
@@ -90,19 +130,13 @@ The server is disabled by default. The intended configuration shape is:
       failOnStartupError: false
 ```
 
-The server binds only to:
+Endpoint:
 
 ```text
 http://127.0.0.1:43127/mcp
 ```
 
-There is intentionally no v0.5 configuration for `0.0.0.0` or another remote host.
-
-The Host prints the effective endpoint when the server starts. A bind/startup failure is explicit and the server never silently widens its network interface or chooses a different configured port.
-
-By default, MCP is an optional adapter: a startup failure is logged and MCP remains unavailable, but the observer and human DevTools stay active. Set `failOnStartupError: true` when MCP availability is a deployment requirement and the plugin should reject activation if the listener cannot start.
-
-### MCP tools
+This continues to expose the original seven read-only tools:
 
 ```text
 cordis_runtime_summary
@@ -114,213 +148,117 @@ cordis_capture_checkpoint
 cordis_compare_current
 ```
 
-All seven tools are marked read-only and idempotent.
+`cordis_profiler_traces` now accepts optional exact `experimentId`, but remains read-only.
 
-A typical external-Agent diagnostic flow is:
+### Explicit external experiment capability
+
+External MCP has no truthful DSH Agent/session identity, so it does not impersonate one or use `ctx.approval`. Mutation authority is an explicit operator capability:
+
+```yaml
+- id: dsh-cordis-devtools
+  name: dsh-cordis-devtools
+  config:
+    mcp:
+      enabled: true
+      port: 43127
+      token: ${CORDIS_DEVTOOLS_MCP_TOKEN}
+      experiments:
+        enabled: true
+```
+
+Rules:
+
+- experiment mutation tools are absent by default;
+- enabling experiments requires a non-empty bearer token;
+- when `token` is configured, **every** MCP request must send `Authorization: Bearer ...`;
+- authentication is checked before MCP dispatch reaches the coordinator;
+- the server stays bound to `127.0.0.1`;
+- token material is never returned/logged or copied into trace/checkpoint data.
+
+Experiment-enabled MCP adds:
 
 ```text
-User: “Why is session/created running twice?”
-
-Agent
-  → cordis_inspect_event({ name: "session/created" })
-  → sees two current listeners with two owner uids
-  → cordis_inspect_fiber({ uid: ... }) for each owner
-  → confirms both owner Fibers are currently live
-  → reads source/lifecycle code with runtime evidence in hand
+cordis_waterfall_experiment_status
+cordis_start_waterfall_experiment
+cordis_stop_waterfall_experiment
 ```
 
-The important difference is that the Agent no longer has to infer listener multiplicity from source-level `ctx.on(...)` calls.
-
-## Runtime Verification workflow
-
-An Agent that intends to change code can preserve a focused baseline before editing:
+A typical external flow mirrors DSH:
 
 ```text
-cordis_capture_checkpoint({
-  scope: {
-    eventNames: ["session/created"],
-    fiberNames: ["SessionPlugin"]
-  }
-})
-        ↓
-caller keeps returned checkpoint
-        ↓
-Agent edits source / user or normal dev workflow reloads it
-        ↓
-cordis_compare_current({ baseline })
+start → leaseId → reproduce → cordis_profiler_traces({ experimentId: leaseId }) → stop/TTL
 ```
 
-DSH uses the same logical operations as `CordisRuntime.captureCheckpoint` / `compareCurrent`.
+## Human ownership interaction
 
-### Checkpoints are caller-owned
+Human Profiler, DSH tools, and MCP tools share one `WaterfallExperimentCoordinator`.
 
-A checkpoint is a self-contained JSON value, not a server-side checkpoint id. The Host does not keep checkpoint history, TTLs, or per-Agent ownership state. The caller must preserve the returned baseline and provide it back to `compareCurrent`.
+Therefore:
 
-The checkpoint records a schema version, canonical digest, scope, current Event/Listener topology, current live Fibers, and metadata-only Effects. It deliberately excludes bounded dispatch history and profiler traces because those are occurrence/timing windows rather than authoritative current topology.
+- an Agent cannot silently steal active Human profiling;
+- a second Agent start reports busy/current-owner facts rather than mutating;
+- Human UI identifies Agent source and expiry;
+- Human **Stop Agent experiment** is an emergency-stop path and may always reduce instrumentation;
+- stale Agent stop/timeout cannot disable a later owner.
 
-### Scope is exact-name and deterministic
+## Evidence semantics
 
-The optional checkpoint scope accepts exact `eventNames` and `fiberNames`. Event selection includes the owner Fibers required to preserve current relationships; Fiber-name selection includes their current owned listener/event relationships. Both selectors use union semantics and deterministic one-hop closure.
+### Empty dispatch result
 
-### Cross-checkpoint identity is semantic, not runtime-local
+A bounded dispatch search returning no rows means **not observed in the retained window**, not “never happened.”
 
-Capture-local fields remain useful evidence, but they are not assumed stable after reload:
+### `truncated` vs `bounded`
 
-- listener id: not semantic identity;
-- listener registration order: retained in each checkpoint, but not semantic identity;
-- owner/Fiber uid: not semantic identity;
-- timestamp/digest: capture/integrity metadata, not runtime object identity.
+- `truncated: true` means the query limit omitted matches that are still retained.
+- `bounded: true` means older runtime history may already have been overwritten.
 
-Listener groups compare stable metadata:
+These are different limitations.
 
-```text
-event
-owner Fiber name / no owner
-prepend
-global
-```
+### Live vs historical Fiber references
 
-Fiber groups compare canonical metadata including name/state/parent name, sorted inject/owned events, and metadata-only Effect structure.
+Current `fibers` inventory is authoritative. Historical dispatch/trace owner references can outlive the Fiber and must not be promoted to live state. Navigation is valid only while the uid still exists in current live inventory.
 
-Equivalent duplicates are counted as a multiset. Therefore a real duplicate registration can be represented as:
+### Experiment attribution is not completeness
 
-```text
-event listener count: 2 → 1
-listener semantic group: 2 → 1
-Fiber semantic group: 2 → 1
-```
+`experimentId = leaseId` identifies which Agent lease created a trace. The profiler store is still bounded; exact filtering cannot prove every trace from the experiment is retained.
 
-instead of inventing cross-reload instance pairing.
+Late settlement/late `next()` facts remain attached to the original tagged trace even after the lease has ended.
 
-### Comparison reports facts, not a verdict
+### Profiler facts are not root-cause verdicts
 
-`compareCurrent` validates the baseline schema/digest, captures fresh current topology using the baseline scope, and returns current checkpoint + structured changes. It intentionally does not produce `fixed`, `rootCause`, or confidence.
+Per-listener timing, entered/returned/settled state, and repeated/late `next()` are observed facts. The project does not invent `selfTime`, definitive chain-stop/veto, root cause, confidence, or fix-success fields.
 
-An unchanged result means only that authoritative topology for that checkpoint scope is semantically equal under the v0.5 descriptor rules. It is not a general proof that an application bug is fixed.
+## Privacy and security
 
-## Evidence semantics an Agent must preserve
+Current contracts do not retain raw event arguments, listener return values, error objects/messages, prompts, tool outputs, file contents, plugin config, credentials, bearer tokens, or raw Effect functions/disposers.
 
-### Empty dispatch search is not proof of “never happened”
+Loopback is a network exposure boundary, not sufficient mutation authority against other local processes. That is why external experiment mutation requires bearer authentication even though the endpoint remains `127.0.0.1`.
 
-Dispatch history is a ring buffer. Results contain bounded-window metadata. Therefore:
+## Real DSH proof
 
-```json
-{
-  "records": [],
-  "window": {
-    "bounded": true,
-    "retained": 100,
-    "matched": 0,
-    "returned": 0,
-    "truncated": false
-  }
-}
-```
+CI runs a keyless real DSH controlled-experiment smoke that uses:
 
-means:
+- a real `SessionStore` live session and open turn;
+- real ToolRuntime;
+- real ApprovalService;
+- real Cordis waterfall;
+- official MCP SDK Client;
+- Chromium Human Profiler.
 
-> no matching record was observed in the currently retained bounded window.
+It proves unavailable/rejected DSH approval is no-op, allowed-once creates a tagged finite DSH lease, stale stop is safe, exact stop works, authenticated MCP creates/query/stops or expires a tagged lease, Human emergency stop works, and ordinary Human profiling remains healthy afterward.
 
-It does **not** mean:
+The existing v0.5 Runtime Verification real DSH smoke runs before it as a regression.
 
-> the event has never happened.
+## Deferred beyond v0.6
 
-### Query truncation is separate from retention loss
+Not provided by this guide/version:
 
-`truncated: true` means the caller's result limit omitted additional matches that are currently retained. `bounded: true` means older runtime history may already have been overwritten before the query.
-
-Those are different forms of incompleteness and must not be collapsed.
-
-### Live Fibers are authoritative
-
-`inspectFiber` returns only the authoritative current Fiber inventory. Historical dispatch/listener references may remain readable elsewhere, but they are not upgraded into live Fiber results.
-
-Event inspection can therefore report a historical owner reference as not currently live without inventing a current Fiber for it.
-
-### Profiler reads do not enable profiling
-
-`profilerTraces` reports the current instrumentation state and existing retained traces only. `captureCheckpoint` and `compareCurrent` also stay on the observer/read-only path. Merely giving an Agent access to diagnostics or verification does not patch Cordis waterfall dispatch.
-
-## Real duplicate registration and verification proof
-
-The deterministic Agent proof models a source-level shape that appears singular while the live process contains two same-name Fibers that both own a listener for the same event.
-
-The diagnostic evidence chain is:
-
-```text
-inspectEvent
-  → two current listeners
-  → owner uid A + owner uid B
-  → one shared runtime owner name
-inspectFiber(name)
-  → two authoritative live Fibers
-inspectFiber(uid A / uid B)
-  → each Fiber owns the event
-searchDispatches
-  → bounded recent occurrence evidence
-  → an observed record reports registeredListeners = 2
-```
-
-Listener ownership comes from the current listener/Fiber registry. Dispatch context is not treated as listener ownership; dispatch history only contributes bounded recent evidence that the event was observed while two listeners were registered.
-
-v0.5 adds a second real Cordis fixture for before/after verification. In one running DSH process:
-
-```text
-DSH CordisRuntime captureCheckpoint ─┐
-                                     ├─ two live duplicate Fibers/listeners
-external MCP captureCheckpoint ──────┘
-                    ↓
-        real Cordis disposal transition
-                    ↓
-DSH CordisRuntime compareCurrent ────┐
-                                     ├─ same semantic 2 → 1 facts
-external MCP compareCurrent ─────────┘
-                    ↓
-Human UI / waterfall profiler smoke still green
-```
-
-The two checkpoints are independent captures, so the E2E compares semantic facts rather than requiring timestamps, digests, or runtime-local ids to match. The suite uses the official MCP SDK Client and no model credential/API key.
-
-## Privacy boundary
-
-The Agent adapters preserve the existing metadata-first contract. They do not add:
-
-- raw event arguments;
-- listener return values;
-- error objects/messages;
-- prompts or model outputs;
-- tool results;
-- file contents;
-- plugin config;
-- credentials;
-- raw Effect functions/disposers.
-
-MCP still exposes runtime topology to other local processes, so loopback-only does not make the endpoint a confidentiality boundary against untrusted software running under the same machine/user account. Authentication and broader remote access require a separate design decision.
-
-## Why DSH does not connect to its own MCP endpoint
-
-Both paths exist for different boundaries:
-
-```text
-DSH Agent
-  → cordisInspect
-  → Runtime Diagnostics Query / Verification
-
-External Agent
-  → MCP
-  → Runtime Diagnostics Query / Verification
-```
-
-Routing the in-process DSH Agent through loopback MCP would add a protocol/network dependency without gaining any runtime facts. The shared Query/Verification layer, not MCP, is the product's source of machine-facing semantics.
-
-## Deferred mutation path
-
-Profiler control is deliberately not part of the v0.5 Agent surface.
-
-A future controlled-runtime-experiment milestone may provide a bounded profiling lease or explicit start/stop controls, but it requires a separate decision covering:
-
-- user/tool execution permission;
-- cleanup when an Agent disappears;
-- timeout/lease behavior;
-- Cordis instrumentation conflict handling;
-- explicit communication that instrumentation is not behavior-neutral observation.
+- automatic source/plugin reload or edit→reload orchestration;
+- arbitrary Cordis event execution;
+- generic listener/service/config mutation;
+- persistent approval grants;
+- lease renewal or concurrent experiment leases;
+- remote/LAN MCP;
+- raw payload capture;
+- automatic `diagnose()` root-cause verdicts;
+- non-waterfall profiler instrumentation.
