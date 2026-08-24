@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
@@ -8,6 +9,13 @@ import {
   ListToolsRequestSchema,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js'
+import type {
+  WaterfallExperimentStartInput,
+  WaterfallExperimentStartResult,
+  WaterfallExperimentStatus,
+  WaterfallExperimentStopInput,
+  WaterfallExperimentStopResult,
+} from '../shared/experiments.js'
 import type { RuntimeCheckpoint, RuntimeCheckpointScope } from '../shared/verification.js'
 import type { RuntimeDiagnosticsQuery } from './diagnostics.js'
 
@@ -17,8 +25,25 @@ export const MCP_PATH = '/mcp'
 const MAX_BODY_BYTES = 1024 * 1024
 const MCP_SERVER_INFO = { name: 'dsh-cordis-devtools', version: '0.5.0' } as const
 
+export interface McpWaterfallExperimentControl {
+  status(): WaterfallExperimentStatus
+  startAgent(source: 'mcp', input?: WaterfallExperimentStartInput): WaterfallExperimentStartResult
+  stopAgent(input: WaterfallExperimentStopInput): WaterfallExperimentStopResult
+}
+
+export interface EmbeddedMcpExperimentOptions {
+  /** Expose mutating start/stop tools. Requires token + control. Default false. */
+  enabled?: boolean
+  /** Shared coordinator-compatible control; status can be exposed read-only when supplied. */
+  control?: McpWaterfallExperimentControl
+}
+
 export interface EmbeddedMcpOptions {
   port?: number
+  /** Optional bearer token. When present, every MCP request requires it. */
+  token?: string
+  /** Optional controlled-waterfall experiment capability. */
+  experiments?: EmbeddedMcpExperimentOptions
 }
 
 export interface EmbeddedMcpLifecycleOptions extends EmbeddedMcpOptions {
@@ -35,6 +60,12 @@ export interface EmbeddedMcpHandle {
 
 interface ActiveProtocolRequest {
   close(): Promise<void>
+}
+
+interface NormalizedMcpOptions {
+  token: string | undefined
+  experimentControl: McpWaterfallExperimentControl | undefined
+  experimentsEnabled: boolean
 }
 
 const EMPTY_SCHEMA = objectSchema({})
@@ -70,16 +101,38 @@ const CHECKPOINT_SCHEMA = objectSchema({
 const COMPARE_SCHEMA = objectSchema({
   baseline: { type: 'object', description: 'Self-contained RuntimeCheckpoint returned by cordis_capture_checkpoint.' },
 }, ['baseline'])
+const EXPERIMENT_START_SCHEMA = objectSchema({
+  ttlMs: { type: 'number', description: 'Finite waterfall experiment lease duration in milliseconds.' },
+})
+const EXPERIMENT_STOP_SCHEMA = objectSchema({
+  leaseId: { type: 'string', description: 'Exact lease id returned by cordis_start_waterfall_experiment.' },
+}, ['leaseId'])
 
-const TOOLS: Tool[] = [
-  tool('cordis_runtime_summary', 'Return compact live Cordis counts and bounded evidence-window metadata.', EMPTY_SCHEMA),
-  tool('cordis_inspect_event', 'Inspect current live listener registrations for one exact Cordis event.', EVENT_SCHEMA),
-  tool('cordis_inspect_fiber', 'Inspect one live Fiber uid or all live Fibers with one exact name.', FIBER_SCHEMA),
-  tool('cordis_search_dispatches', 'Search the retained bounded observer dispatch window newest-first.', DISPATCH_SCHEMA),
-  tool('cordis_profiler_traces', 'Read existing retained waterfall profiler traces without enabling instrumentation.', PROFILER_SCHEMA),
-  tool('cordis_capture_checkpoint', 'Capture a self-contained authoritative Cordis runtime topology checkpoint.', CHECKPOINT_SCHEMA),
-  tool('cordis_compare_current', 'Compare a caller-owned checkpoint with fresh current Cordis runtime topology.', COMPARE_SCHEMA),
+const READ_ONLY_TOOLS: Tool[] = [
+  readOnlyTool('cordis_runtime_summary', 'Return compact live Cordis counts and bounded evidence-window metadata.', EMPTY_SCHEMA),
+  readOnlyTool('cordis_inspect_event', 'Inspect current live listener registrations for one exact Cordis event.', EVENT_SCHEMA),
+  readOnlyTool('cordis_inspect_fiber', 'Inspect one live Fiber uid or all live Fibers with one exact name.', FIBER_SCHEMA),
+  readOnlyTool('cordis_search_dispatches', 'Search the retained bounded observer dispatch window newest-first.', DISPATCH_SCHEMA),
+  readOnlyTool('cordis_profiler_traces', 'Read existing retained waterfall profiler traces without enabling instrumentation.', PROFILER_SCHEMA),
+  readOnlyTool('cordis_capture_checkpoint', 'Capture a self-contained authoritative Cordis runtime topology checkpoint.', CHECKPOINT_SCHEMA),
+  readOnlyTool('cordis_compare_current', 'Compare a caller-owned checkpoint with fresh current Cordis runtime topology.', COMPARE_SCHEMA),
 ]
+
+const EXPERIMENT_STATUS_TOOL = readOnlyTool(
+  'cordis_waterfall_experiment_status',
+  'Read the current controlled waterfall instrumentation owner and lease status.',
+  EMPTY_SCHEMA,
+)
+const EXPERIMENT_START_TOOL = mutationTool(
+  'cordis_start_waterfall_experiment',
+  'Start one finite external-Agent waterfall profiling experiment lease.',
+  EXPERIMENT_START_SCHEMA,
+)
+const EXPERIMENT_STOP_TOOL = mutationTool(
+  'cordis_stop_waterfall_experiment',
+  'Stop only the exact active external-Agent waterfall experiment lease.',
+  EXPERIMENT_STOP_SCHEMA,
+)
 
 /**
  * Own the optional MCP listener inside the plugin Fiber without making MCP
@@ -108,6 +161,7 @@ export async function startEmbeddedMcpServer(
   options: EmbeddedMcpOptions = {},
 ): Promise<EmbeddedMcpHandle> {
   const port = normalizePort(options.port ?? DEFAULT_MCP_PORT)
+  const normalized = normalizeMcpOptions(options)
   const active = new Set<ActiveProtocolRequest>()
   let closing = false
 
@@ -127,6 +181,11 @@ export async function startEmbeddedMcpServer(
       writeJson(res, 405, { error: 'method not allowed' })
       return
     }
+    if (!isAuthorized(req, normalized.token)) {
+      res.setHeader('WWW-Authenticate', 'Bearer')
+      writeJson(res, 401, { error: 'unauthorized' })
+      return
+    }
 
     let body: unknown
     try {
@@ -136,7 +195,7 @@ export async function startEmbeddedMcpServer(
       return
     }
 
-    const server = createProtocolServer(diagnostics)
+    const server = createProtocolServer(diagnostics, normalized)
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -195,10 +254,14 @@ export async function startEmbeddedMcpServer(
   }
 }
 
-function createProtocolServer(diagnostics: RuntimeDiagnosticsQuery): Server {
+function createProtocolServer(
+  diagnostics: RuntimeDiagnosticsQuery,
+  options: NormalizedMcpOptions,
+): Server {
   const server = new Server(MCP_SERVER_INFO, { capabilities: { tools: {} } })
+  const tools = experimentTools(options)
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }))
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const args = readObject(request.params.arguments)
@@ -249,6 +312,19 @@ function createProtocolServer(diagnostics: RuntimeDiagnosticsQuery): Server {
         case 'cordis_compare_current':
           value = diagnostics.compareCurrent({ baseline: readCheckpoint(args, 'baseline') })
           break
+        case 'cordis_waterfall_experiment_status':
+          value = requireExperimentControl(options).status()
+          break
+        case 'cordis_start_waterfall_experiment': {
+          requireExperimentMutation(options)
+          const ttlMs = readOptionalPositiveNumber(args, 'ttlMs')
+          value = requireExperimentControl(options).startAgent('mcp', ttlMs === undefined ? {} : { ttlMs })
+          break
+        }
+        case 'cordis_stop_waterfall_experiment':
+          requireExperimentMutation(options)
+          value = requireExperimentControl(options).stopAgent({ leaseId: readRequiredString(args, 'leaseId') })
+          break
         default:
           throw new Error(`unknown Cordis DevTools MCP tool: ${request.params.name}`)
       }
@@ -271,7 +347,14 @@ function createProtocolServer(diagnostics: RuntimeDiagnosticsQuery): Server {
   return server
 }
 
-function tool(name: string, description: string, inputSchema: Tool['inputSchema']): Tool {
+function experimentTools(options: NormalizedMcpOptions): Tool[] {
+  const tools = [...READ_ONLY_TOOLS]
+  if (options.experimentControl !== undefined) tools.push(EXPERIMENT_STATUS_TOOL)
+  if (options.experimentsEnabled) tools.push(EXPERIMENT_START_TOOL, EXPERIMENT_STOP_TOOL)
+  return tools
+}
+
+function readOnlyTool(name: string, description: string, inputSchema: Tool['inputSchema']): Tool {
   return {
     name,
     description,
@@ -280,6 +363,20 @@ function tool(name: string, description: string, inputSchema: Tool['inputSchema'
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
+      openWorldHint: false,
+    },
+  }
+}
+
+function mutationTool(name: string, description: string, inputSchema: Tool['inputSchema']): Tool {
+  return {
+    name,
+    description,
+    inputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   }
@@ -295,6 +392,45 @@ function objectSchema(
     ...(required === undefined ? {} : { required }),
     additionalProperties: false,
   }
+}
+
+function normalizeMcpOptions(options: EmbeddedMcpOptions): NormalizedMcpOptions {
+  const token = normalizeToken(options.token)
+  const experimentControl = options.experiments?.control
+  const experimentsEnabled = options.experiments?.enabled === true
+  if (experimentsEnabled && token === undefined) {
+    throw new Error('dsh-cordis-devtools: MCP experiments require a non-empty bearer token')
+  }
+  if (experimentsEnabled && experimentControl === undefined) {
+    throw new Error('dsh-cordis-devtools: MCP experiments require an experiment control')
+  }
+  return { token, experimentControl, experimentsEnabled }
+}
+
+function normalizeToken(token: string | undefined): string | undefined {
+  if (token === undefined) return undefined
+  if (token.trim() === '') throw new Error('dsh-cordis-devtools: MCP bearer token must not be empty')
+  return token
+}
+
+function isAuthorized(req: IncomingMessage, token: string | undefined): boolean {
+  if (token === undefined) return true
+  const header = req.headers.authorization
+  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return false
+  const presented = header.slice('Bearer '.length)
+  const expectedBytes = Buffer.from(token)
+  const presentedBytes = Buffer.from(presented)
+  if (expectedBytes.byteLength !== presentedBytes.byteLength) return false
+  return timingSafeEqual(expectedBytes, presentedBytes)
+}
+
+function requireExperimentControl(options: NormalizedMcpOptions): McpWaterfallExperimentControl {
+  if (options.experimentControl === undefined) throw new Error('waterfall experiment control is unavailable')
+  return options.experimentControl
+}
+
+function requireExperimentMutation(options: NormalizedMcpOptions): void {
+  if (!options.experimentsEnabled) throw new Error('waterfall experiment mutation capability is disabled')
 }
 
 function requestPath(req: IncomingMessage): string {
@@ -361,6 +497,12 @@ function readOptionalNumber(row: Record<string, unknown>, key: string): number |
   const value = row[key]
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${key} must be a finite number`)
+  return value
+}
+
+function readOptionalPositiveNumber(row: Record<string, unknown>, key: string): number | undefined {
+  const value = readOptionalNumber(row, key)
+  if (value !== undefined && value <= 0) throw new RangeError(`${key} must be a positive finite number`)
   return value
 }
 
