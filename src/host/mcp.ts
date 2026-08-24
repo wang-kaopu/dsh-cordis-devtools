@@ -8,6 +8,7 @@ import {
   ListToolsRequestSchema,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js'
+import type { RuntimeCheckpoint, RuntimeCheckpointScope } from '../shared/verification.js'
 import type { RuntimeDiagnosticsQuery } from './diagnostics.js'
 
 export const DEFAULT_MCP_PORT = 43127
@@ -55,6 +56,20 @@ const PROFILER_SCHEMA = objectSchema({
   event: { type: 'string', description: 'Exact waterfall event name filter.' },
   limit: { type: 'number', description: 'Maximum returned traces, 1 through 100.' },
 })
+const CHECKPOINT_SCOPE_SCHEMA = {
+  type: 'object',
+  properties: {
+    eventNames: { type: 'array', items: { type: 'string' }, description: 'Exact event names to include.' },
+    fiberNames: { type: 'array', items: { type: 'string' }, description: 'Exact live Fiber names to include.' },
+  },
+  additionalProperties: false,
+} as const
+const CHECKPOINT_SCHEMA = objectSchema({
+  scope: CHECKPOINT_SCOPE_SCHEMA,
+})
+const COMPARE_SCHEMA = objectSchema({
+  baseline: { type: 'object', description: 'Self-contained RuntimeCheckpoint returned by cordis_capture_checkpoint.' },
+}, ['baseline'])
 
 const TOOLS: Tool[] = [
   tool('cordis_runtime_summary', 'Return compact live Cordis counts and bounded evidence-window metadata.', EMPTY_SCHEMA),
@@ -62,6 +77,8 @@ const TOOLS: Tool[] = [
   tool('cordis_inspect_fiber', 'Inspect one live Fiber uid or all live Fibers with one exact name.', FIBER_SCHEMA),
   tool('cordis_search_dispatches', 'Search the retained bounded observer dispatch window newest-first.', DISPATCH_SCHEMA),
   tool('cordis_profiler_traces', 'Read existing retained waterfall profiler traces without enabling instrumentation.', PROFILER_SCHEMA),
+  tool('cordis_capture_checkpoint', 'Capture a self-contained authoritative Cordis runtime topology checkpoint.', CHECKPOINT_SCHEMA),
+  tool('cordis_compare_current', 'Compare a caller-owned checkpoint with fresh current Cordis runtime topology.', COMPARE_SCHEMA),
 ]
 
 /**
@@ -224,6 +241,14 @@ function createProtocolServer(diagnostics: RuntimeDiagnosticsQuery): Server {
           })
           break
         }
+        case 'cordis_capture_checkpoint': {
+          const scope = args.scope === undefined ? undefined : readCheckpointScope(args.scope)
+          value = diagnostics.captureCheckpoint(scope === undefined ? {} : { scope })
+          break
+        }
+        case 'cordis_compare_current':
+          value = diagnostics.compareCurrent({ baseline: readCheckpoint(args, 'baseline') })
+          break
         default:
           throw new Error(`unknown Cordis DevTools MCP tool: ${request.params.name}`)
       }
@@ -337,6 +362,33 @@ function readOptionalNumber(row: Record<string, unknown>, key: string): number |
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${key} must be a finite number`)
   return value
+}
+
+function readOptionalStringArray(row: Record<string, unknown>, key: string): string[] | undefined {
+  const value = row[key]
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
+    throw new TypeError(`${key} must be an array of strings`)
+  }
+  return [...value]
+}
+
+function readCheckpointScope(value: unknown): RuntimeCheckpointScope {
+  const row = readObject(value)
+  const eventNames = readOptionalStringArray(row, 'eventNames')
+  const fiberNames = readOptionalStringArray(row, 'fiberNames')
+  return {
+    ...('eventNames' in row ? { eventNames: eventNames! } : {}),
+    ...('fiberNames' in row ? { fiberNames: fiberNames! } : {}),
+  }
+}
+
+function readCheckpoint(row: Record<string, unknown>, key: string): RuntimeCheckpoint {
+  const value = row[key]
+  if (value === undefined || value === null || Array.isArray(value) || typeof value !== 'object') {
+    throw new TypeError(`${key} must be a RuntimeCheckpoint object`)
+  }
+  return value as RuntimeCheckpoint
 }
 
 function errorMessage(error: unknown): string {
