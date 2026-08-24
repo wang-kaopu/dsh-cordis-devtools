@@ -2,7 +2,9 @@ import { createElement, type ReactNode } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import { EventExplorerAction } from './EventExplorer.js'
 import { createSnapshotPort, type ClientConnectionLike } from './port.js'
+import { createProfilerPort } from './profiler-port.js'
 import { EventExplorerStore } from './store.js'
+import { ProfilerStore } from './profiler-store.js'
 
 interface ClientSlotsLike {
   inject(name: string, callback: () => unknown): unknown
@@ -24,8 +26,12 @@ export function apply(ctx: Context): void {
   const connection = requireService<ClientConnectionLike>(ctx, 'connection')
   const slots = requireService<ClientSlotsLike>(ctx, 'slots')
   const store = new EventExplorerStore(createSnapshotPort(connection))
+  const profilerStore = new ProfilerStore(createProfilerPort(connection))
 
-  ctx.effect(() => () => { store.dispose() }, 'dsh-cordis-devtools: dispose client snapshot store')
+  ctx.effect(() => () => {
+    profilerStore.dispose()
+    store.dispose()
+  }, 'dsh-cordis-devtools: dispose client stores')
 
   slots.inject('sidebar.footer.action', () => slots.register({
     name: 'sidebar.footer.action',
@@ -35,6 +41,7 @@ export function apply(ctx: Context): void {
   }, props => createElement(EventExplorerAction, {
     wide: props.wide,
     store,
+    profilerStore,
   })))
 }
 

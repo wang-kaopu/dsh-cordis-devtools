@@ -19,20 +19,28 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ListenerSnapshot } from '../shared/types.js'
 import type { EventExplorerStore } from './store.js'
+import type { ProfilerStore } from './profiler-store.js'
 import { EventsView } from './views/EventsView.js'
 import { TimelineView } from './views/TimelineView.js'
 import { FibersView } from './views/FibersView.js'
+import { ProfilerView } from './views/ProfilerView.js'
 import css from './DevtoolsPanel.module.css'
 
 export interface EventExplorerActionProps {
   wide: boolean
   store: EventExplorerStore
+  profilerStore: ProfilerStore
 }
 
-type DevtoolsView = 'events' | 'timeline' | 'fibers'
+type DevtoolsView = 'events' | 'timeline' | 'fibers' | 'profiler'
 
-export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
+export function EventExplorerAction({ wide, store, profilerStore }: EventExplorerActionProps) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
+  const profilerState = useSyncExternalStore(
+    profilerStore.subscribe,
+    profilerStore.getSnapshot,
+    profilerStore.getSnapshot,
+  )
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<DevtoolsView>('events')
   const [query, setQuery] = useState('')
@@ -50,6 +58,12 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
     store.setOpen(open)
     return () => { if (open) store.setOpen(false) }
   }, [open, store])
+
+  useEffect(() => {
+    const active = open && view === 'profiler'
+    profilerStore.setActive(active)
+    return () => { if (active) profilerStore.setActive(false) }
+  }, [open, profilerStore, view])
 
   useLayoutEffect(() => {
     if (!open) return
@@ -176,13 +190,17 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
     setView('events')
   }
 
-  const subtitle = state.snapshot === undefined
-    ? 'Runtime snapshot unavailable'
-    : view === 'events'
-      ? `${state.snapshot.events.length} events · ${state.snapshot.listeners.length} listeners`
-      : view === 'timeline'
-        ? `${state.snapshot.dispatches.length} recent dispatches · bounded history`
-        : `${state.snapshot.fibers.length} live fibers · Cordis registry`
+  const subtitle = view === 'profiler'
+    ? profilerState.snapshot === undefined
+      ? 'Profiler snapshot unavailable'
+      : `${profilerState.snapshot.traces.length} waterfall traces · ${profilerState.snapshot.instrumentation}`
+    : state.snapshot === undefined
+      ? 'Runtime snapshot unavailable'
+      : view === 'events'
+        ? `${state.snapshot.events.length} events · ${state.snapshot.listeners.length} listeners`
+        : view === 'timeline'
+          ? `${state.snapshot.dispatches.length} recent dispatches · bounded history`
+          : `${state.snapshot.fibers.length} live fibers · Cordis registry`
 
   const searchLabel = view === 'events'
     ? 'Search Cordis events'
@@ -194,6 +212,9 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
     : view === 'timeline'
       ? 'Search event or dispatch context…'
       : 'Search fiber name or uid…'
+  const refreshLabel = view === 'profiler' ? 'Refresh profiler snapshot' : 'Refresh runtime snapshot'
+  const activeError = view === 'profiler' ? profilerState.error : state.error
+  const activeStale = view === 'profiler' ? profilerState.stale : state.stale
 
   return (
     <div ref={rootRef} data-cordis-devtools="root" className={css.root}>
@@ -226,16 +247,19 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
               <div className={css.subtitle}>{subtitle}</div>
             </div>
             <div className={css.headerActions}>
-              <Tooltip label="Refresh runtime snapshot" side="bottom" delayMs={400}>
+              <Tooltip label={refreshLabel} side="bottom" delayMs={400}>
                 <Button
                   variant="ghost"
                   size="sm"
                   icon={<IconRefreshOutline16 size={16} />}
                   className={css.iconOnly}
                   data-testid="cordis-devtools-refresh"
-                  aria-label="Refresh runtime snapshot"
-                  disabled={state.loading}
-                  onClick={() => { void store.refresh() }}
+                  aria-label={refreshLabel}
+                  disabled={view === 'profiler' ? profilerState.loading || profilerState.mutating : state.loading}
+                  onClick={() => {
+                    if (view === 'profiler') void profilerStore.refresh()
+                    else void store.refresh()
+                  }}
                 />
               </Tooltip>
               <Tooltip label="Close Cordis DevTools" side="bottom" delayMs={400}>
@@ -251,9 +275,9 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
             </div>
           </header>
 
-          {state.error !== undefined && (
+          {activeError !== undefined && (
             <div role="status" data-testid="cordis-devtools-error" className={css.error}>
-              {state.stale ? 'Stale snapshot · ' : ''}{state.error}
+              {activeStale ? 'Stale snapshot · ' : ''}{activeError}
             </div>
           )}
 
@@ -261,24 +285,27 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
             <Pill active={view === 'events'} onClick={() => { switchView('events') }}>Events</Pill>
             <Pill active={view === 'timeline'} onClick={() => { switchView('timeline') }}>Timeline</Pill>
             <Pill active={view === 'fibers'} onClick={() => { switchView('fibers') }}>Fibers</Pill>
+            <Pill active={view === 'profiler'} onClick={() => { switchView('profiler') }}>Profiler</Pill>
           </div>
 
-          <div className={css.toolbar}>
-            <Input
-              icon={<IconSearchOutline16 size={16} />}
-              className={css.search}
-              data-testid="cordis-devtools-search"
-              aria-label={searchLabel}
-              placeholder={searchPlaceholder}
-              value={query}
-              onChange={event => { setQuery(event.currentTarget.value) }}
-            />
-            {state.snapshot !== undefined && (
-              <span className={css.timestamp}>
-                {new Date(state.snapshot.generatedAt).toLocaleTimeString()}
-              </span>
-            )}
-          </div>
+          {view !== 'profiler' && (
+            <div className={css.toolbar}>
+              <Input
+                icon={<IconSearchOutline16 size={16} />}
+                className={css.search}
+                data-testid="cordis-devtools-search"
+                aria-label={searchLabel}
+                placeholder={searchPlaceholder}
+                value={query}
+                onChange={event => { setQuery(event.currentTarget.value) }}
+              />
+              {state.snapshot !== undefined && (
+                <span className={css.timestamp}>
+                  {new Date(state.snapshot.generatedAt).toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+          )}
 
           {view === 'timeline' && state.snapshot !== undefined && (
             <div className={css.modeFilters} data-testid="cordis-devtools-mode-filters">
@@ -311,7 +338,21 @@ export function EventExplorerAction({ wide, store }: EventExplorerActionProps) {
           )}
 
           <div className={css.body}>
-            {state.snapshot === undefined ? (
+            {view === 'profiler' ? (
+              profilerState.snapshot === undefined ? (
+                <div className={css.empty}>
+                  {profilerState.loading ? 'Loading profiler snapshot…' : 'No profiler snapshot.'}
+                </div>
+              ) : (
+                <ProfilerView
+                  status={profilerState.snapshot.instrumentation}
+                  traces={profilerState.snapshot.traces}
+                  busy={profilerState.mutating}
+                  onSetInstrumentation={enabled => { void profilerStore.setEnabled(enabled) }}
+                  onOpenFiber={openFiber}
+                />
+              )
+            ) : state.snapshot === undefined ? (
               <div className={css.empty}>
                 {state.loading ? 'Loading runtime snapshot…' : 'No runtime snapshot.'}
               </div>

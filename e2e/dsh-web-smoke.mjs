@@ -69,6 +69,7 @@ try {
   assert.match(panelText ?? '', /Events/)
   assert.match(panelText ?? '', /Timeline/)
   assert.match(panelText ?? '', /Fibers/)
+  assert.match(panelText ?? '', /Profiler/)
   assert.equal(await page.locator('[data-testid="cordis-devtools-error"]').count(), 0)
 
   await page.getByRole('button', { name: 'Timeline', exact: true }).click()
@@ -78,6 +79,22 @@ try {
   const fiberDetail = page.locator('[data-testid="cordis-devtools-fiber-detail"]')
   await fiberDetail.waitFor({ state: 'visible', timeout: 10_000 })
   assert.match(await fiberDetail.textContent() ?? '', /Effects/)
+
+  await page.getByRole('button', { name: 'Profiler', exact: true }).click()
+  await page.getByRole('region', { name: 'Waterfall Profiler' }).waitFor({ state: 'visible', timeout: 10_000 })
+  const profilerToggle = page.locator('[data-testid="cordis-devtools-profiler-toggle"]')
+  await profilerToggle.waitFor({ state: 'visible', timeout: 10_000 })
+  assert.equal(await profilerToggle.textContent(), 'Enable profiling')
+
+  await profilerToggle.click()
+  await page.waitForFunction(() => {
+    return document.querySelector('[data-testid="cordis-devtools-profiler-toggle"]')?.textContent === 'Disable profiling'
+  }, undefined, { timeout: 10_000 })
+
+  await profilerToggle.click()
+  await page.waitForFunction(() => {
+    return document.querySelector('[data-testid="cordis-devtools-profiler-toggle"]')?.textContent === 'Enable profiling'
+  }, undefined, { timeout: 10_000 })
 
   await page.getByRole('button', { name: 'Close Cordis DevTools' }).click()
   await panel.waitFor({ state: 'detached', timeout: 10_000 })

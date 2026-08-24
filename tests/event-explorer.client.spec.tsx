@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { EventExplorerAction } from '../src/client/EventExplorer.js'
 import { EventExplorerStore } from '../src/client/store.js'
+import { ProfilerStore } from '../src/client/profiler-store.js'
 import type { DevtoolsSnapshot } from '../src/shared/types.js'
 
 const rootFiber = { uid: 0, name: 'root', state: 'active' }
@@ -142,16 +143,25 @@ describe('EventExplorerAction', () => {
         return snapshot
       },
     }, 60_000)
+    const profilerStore = new ProfilerStore({
+      async fetchSnapshot() {
+        return { generatedAt: 1, instrumentation: 'disabled', traces: [] }
+      },
+      async setEnabled(enabled) {
+        return { generatedAt: 2, instrumentation: enabled ? 'enabled' : 'disabled', traces: [] }
+      },
+    }, 60_000)
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
     mounted.push(() => {
       root.unmount()
+      profilerStore.dispose()
       store.dispose()
     })
 
     await act(async () => {
-      root.render(<EventExplorerAction wide store={store} />)
+      root.render(<EventExplorerAction wide store={store} profilerStore={profilerStore} />)
     })
 
     const trigger = container.querySelector<HTMLButtonElement>('[data-testid="cordis-devtools-trigger"]')
