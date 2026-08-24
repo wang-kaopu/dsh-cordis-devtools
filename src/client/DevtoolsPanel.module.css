@@ -358,7 +358,7 @@
 
 .fiberStat {
   display: grid;
-  grid-template-rows: 22px minmax(30px, auto);
+  grid-template-rows: 22px 20px;
   align-content: start;
   gap: 4px;
   padding: 10px;
@@ -372,7 +372,7 @@
 
 .fiberStatLabel {
   font-size: 10px;
-  line-height: 1.35;
+  line-height: 20px;
   white-space: nowrap;
 }
 
