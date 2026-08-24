@@ -43,7 +43,9 @@ export class ProfilerStore {
       const inFlight = this.inFlight
       inFlight?.abort()
       if (this.inFlight === inFlight) this.inFlight = undefined
-      if (this.state.mutating) this.publish({ ...this.state, mutating: false })
+      if (this.state.loading || this.state.mutating) {
+        this.publish({ ...this.state, loading: false, mutating: false })
+      }
       return
     }
 
