@@ -347,6 +347,7 @@ export function EventExplorerAction({ wide, store, profilerStore }: EventExplore
                 <ProfilerView
                   status={profilerState.snapshot.instrumentation}
                   traces={profilerState.snapshot.traces}
+                  liveFiberUids={liveFiberUids}
                   busy={profilerState.mutating}
                   onSetInstrumentation={enabled => { void profilerStore.setEnabled(enabled) }}
                   onOpenFiber={openFiber}
