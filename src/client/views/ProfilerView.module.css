@@ -6,6 +6,7 @@
 }
 
 .header,
+.headerActions,
 .listenerHead,
 .summary,
 .nextCall {
@@ -19,11 +20,17 @@
   margin-bottom: 10px;
 }
 
+.headerActions {
+  flex: none;
+  gap: 6px;
+}
+
 .title {
   font-size: 13px;
 }
 
 .subtitle,
+.statusNote,
 .muted,
 .elapsed,
 .summary,
@@ -38,6 +45,12 @@
 .subtitle {
   margin-top: 2px;
   font-size: 11px;
+}
+
+.statusNote {
+  margin-bottom: 8px;
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .traceList {
