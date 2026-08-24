@@ -12,6 +12,8 @@ I2 必须证明 instrumented mode 没有改变 Cordis waterfall 的原生语义�
 
 测试直接断言 caller 可观察的返回值/对象 identity、事件顺序、this、error/rejection identity 与 side effects。late-next 使用保存 continuation 后同步显式调用的方式，不依赖任意 sleep。
 
+当前 4.0.1 还固定了一个值得保留的 runtime 事实：直接 `ctx.on()` 返回的 disposer 在该路径下调用后返回 `undefined`，尽管公开类型注释暗示 boolean；矩阵以实际运行行为为 oracle，同时继续断言 listener 的确被移除。
+
 ## Alternatives considered
 
 - 等 I2 完成后直接测试 instrumentation。拒绝，因为会缺少独立 oracle，容易把实现行为反向定义成预期。
@@ -20,4 +22,4 @@ I2 必须证明 instrumented mode 没有改变 Cordis waterfall 的原生语义�
 
 ## Consequences
 
-I2/I3 获得独立于 profiler 实现的 upstream oracle。Cordis 版本升级若改变这些行为，会先触发 matrix 失败和 compatibility review，而不是静默把新行为当成兼容。
+I2/I3 获得独立于 profiler 实现的 upstream oracle。Cordis 版本升级若改变这些行为，会先触发 matrix 失败和 compatibility review，而不是静默把新行为当成兼容。后续 parity 不应只根据类型声明推导 disposer 的运行时返回值。
