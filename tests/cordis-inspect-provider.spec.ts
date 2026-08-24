@@ -9,6 +9,7 @@ import {
 import { RuntimeDiagnosticsQuery } from '../src/host/diagnostics.js'
 import type { DevtoolsSnapshot } from '../src/shared/types.js'
 import type { WaterfallProfilerSnapshot } from '../src/shared/trace.js'
+import type { RuntimeCheckpoint } from '../src/shared/verification.js'
 
 function diagnostics(): RuntimeDiagnosticsQuery {
   const observer: DevtoolsSnapshot = {
@@ -52,7 +53,7 @@ function diagnostics(): RuntimeDiagnosticsQuery {
 }
 
 describe('CordisRuntime inspect provider', () => {
-  it('declares the five read-only methods and delegates to RuntimeDiagnosticsQuery', async () => {
+  it('declares seven read-only methods and delegates to RuntimeDiagnosticsQuery', async () => {
     const provider = createCordisRuntimeInspectProvider(diagnostics())
 
     expect(provider.manifest.id).toBe(CORDIS_RUNTIME_INSPECT_PROVIDER_ID)
@@ -62,6 +63,8 @@ describe('CordisRuntime inspect provider', () => {
       'inspectFiber',
       'searchDispatches',
       'profilerTraces',
+      'captureCheckpoint',
+      'compareCurrent',
     ])
 
     await expect(provider.query('runtimeSummary', {})).resolves.toMatchObject({ liveFibers: 1, listeners: 1 })
@@ -80,6 +83,23 @@ describe('CordisRuntime inspect provider', () => {
     await expect(provider.query('profilerTraces', {})).resolves.toMatchObject({
       instrumentation: 'disabled',
       traces: [],
+    })
+
+    const baseline = await provider.query('captureCheckpoint', {
+      scope: { eventNames: ['demo/event'], fiberNames: ['demo'] },
+    }) as RuntimeCheckpoint
+    expect(baseline).toMatchObject({
+      schemaVersion: 1,
+      scope: { eventNames: ['demo/event'], fiberNames: ['demo'] },
+      events: [{ name: 'demo/event', listenerCount: 1 }],
+      fibers: [{ uid: 7, name: 'demo' }],
+    })
+    await expect(provider.query('compareCurrent', { baseline })).resolves.toMatchObject({
+      changed: false,
+      baselineDigest: baseline.digest,
+      events: [],
+      listenerGroups: [],
+      fiberGroups: [],
     })
   })
 
@@ -102,9 +122,11 @@ describe('CordisRuntime inspect provider', () => {
     expect(effect).toHaveBeenCalledTimes(1)
   })
 
-  it('rejects unknown methods and malformed exact-event input', async () => {
+  it('rejects unknown methods and malformed verification inputs', async () => {
     const provider = createCordisRuntimeInspectProvider(diagnostics())
     await expect(provider.query('missing', {})).rejects.toThrow('unknown CordisRuntime inspect method')
     await expect(provider.query('inspectEvent', {})).rejects.toThrow('name must be a non-empty string')
+    await expect(provider.query('captureCheckpoint', { scope: { eventNames: 'demo/event' } })).rejects.toThrow('eventNames must be an array of strings')
+    await expect(provider.query('compareCurrent', {})).rejects.toThrow('baseline must be a RuntimeCheckpoint object')
   })
 })
