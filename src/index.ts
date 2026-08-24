@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { installCordisRuntimeInspect } from './host/cordis-inspect.js'
+import { installDshExperimentTools } from './host/dsh-experiments.js'
 import { DEFAULT_MCP_PORT, installEmbeddedMcpServer } from './host/mcp.js'
 import { installDevtoolsRpc } from './host/rpc.js'
 import { DevtoolsService } from './host/service.js'
@@ -38,6 +39,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   ctx.provide('cordisDevtools', service)
   installDevtoolsRpc(ctx, service)
   installCordisRuntimeInspect(ctx, service.diagnostics)
+  // Registration is optional through ctx.inject(['tools']); the start body
+  // still fails closed unless the real DSH approval seam grants allowed-once.
+  installDshExperimentTools(ctx, service)
 
   if (config.mcp?.enabled === true) {
     await installEmbeddedMcpServer(ctx, service.diagnostics, {
