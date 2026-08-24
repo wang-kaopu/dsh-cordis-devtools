@@ -57,7 +57,7 @@ describe('instrumented waterfall semantic parity', () => {
     })
   })
 
-  it('preserves veto and prepend behavior', async () => {
+  it('preserves no-next veto behavior', async () => {
     await expectParity((ctx) => {
       const steps: string[] = []
       ctx.on('devtools/parity', (log) => {
@@ -67,15 +67,17 @@ describe('instrumented waterfall semantic parity', () => {
       ctx.on('devtools/parity', (log, next) => {
         log.push('unreached')
         return next()
-      }, { prepend: false })
-      const vetoResult = run(ctx, steps)
+      })
+      return { result: run(ctx, steps), steps }
+    })
+  })
 
-      const prependCtx = new Context()
-      const prependSteps: string[] = []
-      prependCtx.on('devtools/parity', (log, next) => { log.push('normal'); return next() })
-      prependCtx.on('devtools/parity', (log, next) => { log.push('prepend'); return next() }, { prepend: true })
-      const prependResult = run(prependCtx, prependSteps)
-      return { vetoResult, steps, prependResult, prependSteps }
+  it('preserves prepend ordering', async () => {
+    await expectParity((ctx) => {
+      const steps: string[] = []
+      ctx.on('devtools/parity', (log, next) => { log.push('normal'); return next() })
+      ctx.on('devtools/parity', (log, next) => { log.push('prepend'); return next() }, { prepend: true })
+      return { result: run(ctx, steps), steps }
     })
   })
 
@@ -83,6 +85,7 @@ describe('instrumented waterfall semantic parity', () => {
     await expectParity(async (ctx) => {
       const steps: string[] = []
       let sameThis = false
+      let dispatchCtx: Context
       const pluginA = { name: 'parity-a', apply(pluginCtx: Context) {
         pluginCtx.on('devtools/parity', function (this: Context, log, next) {
           sameThis = this === dispatchCtx
@@ -96,7 +99,7 @@ describe('instrumented waterfall semantic parity', () => {
       await ctx.plugin(pluginA)
       await ctx.plugin(pluginB)
       let filterCalls = 0
-      const dispatchCtx = ctx.extend({
+      dispatchCtx = ctx.extend({
         [Context.filter]: (target: Context) => {
           filterCalls++
           return target.fiber.name === 'parity-a'
@@ -110,30 +113,34 @@ describe('instrumented waterfall semantic parity', () => {
     })
   })
 
-  it('preserves synchronous error and Promise identity facts', async () => {
-    await expectParity(async (ctx) => {
+  it('preserves exact synchronous error identity', async () => {
+    await expectParity((ctx) => {
       const error = new Error('sentinel')
       ctx.on('devtools/parity', () => { throw error })
       let sameError = false
       try { run(ctx, []) } catch (reason) { sameError = reason === error }
+      return { sameError }
+    })
+  })
 
-      const promiseCtx = new Context()
+  it('preserves fulfilled Promise identity and value', async () => {
+    await expectParity(async (ctx) => {
       const promise = Promise.resolve('fulfilled')
-      promiseCtx.on('devtools/parity', () => promise)
-      const promiseResult = run(promiseCtx, [])
-      const samePromise = promiseResult === promise
-      const fulfilled = await promiseResult
+      ctx.on('devtools/parity', () => promise)
+      const result = run(ctx, [])
+      return { samePromise: result === promise, value: await result }
+    })
+  })
 
-      const rejectCtx = new Context()
+  it('preserves rejected Promise identity and rejection reason', async () => {
+    await expectParity(async (ctx) => {
       const rejection = new Error('rejected')
-      const rejectedPromise = Promise.reject(rejection)
-      rejectCtx.on('devtools/parity', () => rejectedPromise)
-      const rejectedResult = run(rejectCtx, [])
-      const sameRejectedPromise = rejectedResult === rejectedPromise
+      const promise = Promise.reject(rejection)
+      ctx.on('devtools/parity', () => promise)
+      const result = run(ctx, [])
       let sameRejection = false
-      try { await rejectedResult } catch (reason) { sameRejection = reason === rejection }
-
-      return { sameError, samePromise, fulfilled, sameRejectedPromise, sameRejection }
+      try { await result } catch (reason) { sameRejection = reason === rejection }
+      return { samePromise: result === promise, sameRejection }
     })
   })
 
@@ -155,14 +162,13 @@ describe('instrumented waterfall semantic parity', () => {
         log.push('after-await')
         return value
       })
-      const result = await run(ctx, steps)
-      return { result, steps }
+      return { result: await run(ctx, steps), steps }
     })
   })
 
-  it('preserves repeated and late next behavior', async () => {
+  it('preserves repeated next behavior', async () => {
     await expectParity((ctx) => {
-      const repeated: string[] = []
+      const steps: string[] = []
       ctx.on('devtools/parity', (log, next) => {
         const first = next()
         log.push(`first:${String(first)}`)
@@ -172,23 +178,27 @@ describe('instrumented waterfall semantic parity', () => {
       })
       ctx.on('devtools/parity', (log, next) => { log.push('listener-b'); return next() })
       let innerCalls = 0
-      const repeatedResult = run(ctx, repeated, () => {
+      const result = run(ctx, steps, () => {
         innerCalls++
         return `inner-${innerCalls}`
       })
+      return { result, steps, innerCalls }
+    })
+  })
 
-      const lateCtx = new Context()
-      const late: string[] = []
+  it('preserves late next behavior', async () => {
+    await expectParity((ctx) => {
+      const steps: string[] = []
       let savedNext: (() => unknown) | undefined
-      lateCtx.on('devtools/parity', (log, next) => {
+      ctx.on('devtools/parity', (log, next) => {
         log.push('early')
         savedNext = next
         return 'early-result'
       })
-      lateCtx.on('devtools/parity', (log, next) => { log.push('late-listener'); return next() })
-      const earlyResult = run(lateCtx, late)
+      ctx.on('devtools/parity', (log, next) => { log.push('late-listener'); return next() })
+      const earlyResult = run(ctx, steps)
       const lateResult = savedNext?.()
-      return { repeated, repeatedResult, innerCalls, late, earlyResult, lateResult }
+      return { earlyResult, lateResult, steps }
     })
   })
 
