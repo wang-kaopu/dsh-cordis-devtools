@@ -51,6 +51,10 @@ function render(onOpenFiber = vi.fn()) {
   return { host, onOpenFiber }
 }
 
+function disclosure(host: HTMLElement): HTMLElement | null {
+  return host.querySelector('[data-trace-id="trace-1"] [data-disclosure-row]')
+}
+
 describe('ProfilerView', () => {
   it('renders instrumentation state and expands repeated next facts', async () => {
     const { host } = render()
@@ -58,10 +62,9 @@ describe('ProfilerView', () => {
     expect(host.textContent).toContain('enabled')
     expect(host.textContent).toContain('loader/entry-init')
 
-    const traceButton = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('loader/entry-init'))
-    expect(traceButton).toBeDefined()
-    await act(async () => { traceButton!.click() })
+    const traceDisclosure = disclosure(host)
+    expect(traceDisclosure).not.toBeNull()
+    await act(async () => { traceDisclosure?.click() })
 
     expect(host.textContent).toContain('loader-plugin')
     expect(host.textContent).toContain('next #1')
@@ -73,14 +76,12 @@ describe('ProfilerView', () => {
   it('navigates to a listener owner through the rendered Pill', async () => {
     const onOpenFiber = vi.fn()
     const { host } = render(onOpenFiber)
-    const traceButton = [...host.querySelectorAll('button')]
-      .find(button => button.textContent?.includes('loader/entry-init'))
-    await act(async () => { traceButton!.click() })
+    await act(async () => { disclosure(host)?.click() })
 
-    const ownerButton = [...host.querySelectorAll('button')]
+    const ownerButton = [...host.querySelectorAll<HTMLButtonElement>('[data-listener-span="span-1"] button')]
       .find(button => button.textContent === 'loader-plugin')
     expect(ownerButton).toBeDefined()
-    await act(async () => { ownerButton!.click() })
+    await act(async () => { ownerButton?.click() })
     expect(onOpenFiber).toHaveBeenCalledWith(7)
   })
 
