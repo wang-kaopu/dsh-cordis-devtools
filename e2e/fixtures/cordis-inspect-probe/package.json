@@ -1,0 +1,15 @@
+{
+  "name": "dsh-cordis-devtools-e2e-inspect-probe",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "dependencies": {
+    "@deepseek-ai/dsh-cordis-host-runner": "0.1.1-rc.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
