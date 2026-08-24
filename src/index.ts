@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { installCordisRuntimeInspect } from './host/cordis-inspect.js'
+import { installDshExperimentTools } from './host/dsh-experiments.js'
 import { DEFAULT_MCP_PORT, installEmbeddedMcpServer } from './host/mcp.js'
 import { installDevtoolsRpc } from './host/rpc.js'
 import { DevtoolsService } from './host/service.js'
@@ -19,7 +20,7 @@ export interface McpConfig {
   port?: number
   /** Optional bearer token. When configured, every MCP request requires it. */
   token?: string
-  /** Optional controlled waterfall experiment capability. Mutation stays hidden unless explicitly enabled. */
+  /** Optional controlled waterfall experiment capability. Omit to preserve the v0.5 seven-tool surface. */
   experiments?: McpExperimentConfig
   /** Reject plugin activation if the MCP listener cannot start. Default false. */
   failOnStartupError?: boolean
@@ -47,19 +48,23 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   ctx.provide('cordisDevtools', service)
   installDevtoolsRpc(ctx, service)
   installCordisRuntimeInspect(ctx, service.diagnostics)
+  // Registration is optional through ctx.inject(['tools']); the start body
+  // still fails closed unless the real DSH approval seam grants allowed-once.
+  installDshExperimentTools(ctx, service)
 
   if (config.mcp?.enabled === true) {
+    const experiments = config.mcp.experiments === undefined
+      ? undefined
+      : {
+          enabled: config.mcp.experiments.enabled ?? false,
+          control: service,
+        }
+
     await installEmbeddedMcpServer(ctx, service.diagnostics, {
       port: config.mcp.port ?? DEFAULT_MCP_PORT,
       token: config.mcp.token,
       failOnStartupError: config.mcp.failOnStartupError ?? false,
-      experiments: {
-        enabled: config.mcp.experiments?.enabled ?? false,
-        // Supplying control makes read-only experiment status available even
-        // when mutation capability remains disabled. start/stop stay hidden
-        // unless the explicit capability + bearer-token requirements pass.
-        control: service,
-      },
+      ...(experiments === undefined ? {} : { experiments }),
     })
   }
 }
