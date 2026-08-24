@@ -34,6 +34,10 @@ Rejected. The existing disable operation already has the approved Human emergenc
 
 Rejected. Source and expiry are the most useful Human-facing facts. The lease id remains available in machine-facing diagnostics/trace attribution and does not need to dominate the UI.
 
+## Consequences
+
+The browser Profiler now presents the same ownership facts as the Host rather than deriving ownership from the low-level instrumentation state. Existing Human enable/disable behavior remains unchanged when no Agent lease is active. During an Agent lease, the Human surface intentionally exposes only the explicit safety-stop action; it does not provide takeover or renewal semantics and does not create another owner state outside the coordinator.
+
 ## Verification
 
 DOM-level client tests render a real Agent ownership snapshot, verify source/ownership text and the explicit stop label, and assert the action requests `enabled=false`. Existing trace expansion and live-Fiber navigation tests remain unchanged; no source-string tests are added.
