@@ -9,6 +9,7 @@ import { chromium } from 'playwright'
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2'
 const repoRoot = process.cwd()
 const probeRoot = join(repoRoot, 'e2e', 'fixtures', 'waterfall-probe')
+const inspectProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'cordis-inspect-probe')
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-cordis-devtools-e2e-'))
 const port = await getFreePort()
@@ -32,6 +33,10 @@ try {
     'dlx', DSH_PACKAGE,
     'plugin', '--profile', 'web', 'add', probeRoot,
   ], { env })
+  await run(pnpm, [
+    'dlx', DSH_PACKAGE,
+    'plugin', '--profile', 'web', 'add', inspectProbeRoot,
+  ], { env })
 
   server = spawn(pnpm, [
     'dlx', DSH_PACKAGE,
@@ -50,6 +55,7 @@ try {
   server.stderr.on('data', appendServerOutput)
 
   await waitForServer(baseUrl, server)
+  await waitForOutput('[cordis-devtools-e2e] CordisRuntime inspect OK', server)
 
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
@@ -179,6 +185,18 @@ async function waitForServer(url, child) {
     await delay(250)
   }
   throw new Error(`timed out waiting for ${url}`)
+}
+
+async function waitForOutput(marker, child) {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    if (serverOutput.includes(marker)) return
+    if (child.exitCode !== null) {
+      throw new Error(`dsh web exited before emitting ${marker} (code ${child.exitCode})`)
+    }
+    await delay(100)
+  }
+  throw new Error(`timed out waiting for DSH output marker: ${marker}`)
 }
 
 async function run(command, args, options) {
