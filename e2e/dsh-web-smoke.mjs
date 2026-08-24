@@ -8,6 +8,7 @@ import { chromium } from 'playwright'
 
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2'
 const repoRoot = process.cwd()
+const probeRoot = join(repoRoot, 'e2e', 'fixtures', 'waterfall-probe')
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-cordis-devtools-e2e-'))
 const port = await getFreePort()
@@ -26,6 +27,10 @@ try {
   await run(pnpm, [
     'dlx', DSH_PACKAGE,
     'plugin', '--profile', 'web', 'add', repoRoot,
+  ], { env })
+  await run(pnpm, [
+    'dlx', DSH_PACKAGE,
+    'plugin', '--profile', 'web', 'add', probeRoot,
   ], { env })
 
   server = spawn(pnpm, [
@@ -90,6 +95,20 @@ try {
   await page.waitForFunction(() => {
     return document.querySelector('[data-testid="cordis-devtools-profiler-toggle"]')?.textContent === 'Disable profiling'
   }, undefined, { timeout: 10_000 })
+
+  const probeTrace = panel.locator('[data-trace-id]')
+    .filter({ hasText: 'cordis-devtools-e2e/probe' })
+    .first()
+  await probeTrace.waitFor({ state: 'visible', timeout: 15_000 })
+  await probeTrace.locator('[data-disclosure-row]').click()
+  await page.waitForFunction(() => {
+    const rows = [...document.querySelectorAll('[data-trace-id]')]
+    const probe = rows.find(row => row.textContent?.includes('cordis-devtools-e2e/probe'))
+    return probe?.textContent?.includes('next #1') === true
+  }, undefined, { timeout: 10_000 })
+  const probeText = await probeTrace.textContent()
+  assert.match(probeText ?? '', /cordis-devtools-e2e\/probe/)
+  assert.match(probeText ?? '', /next #1/)
 
   await profilerToggle.click()
   await page.waitForFunction(() => {
