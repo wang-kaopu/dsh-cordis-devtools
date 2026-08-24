@@ -5,8 +5,14 @@
 }
 
 .fiberDetails {
+  gap: 4px;
+}
+
+.fiberDetails > div {
+  display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
-  gap: 8px 10px;
+  align-items: start;
+  gap: 10px;
 }
 
 .timelineDetails {
@@ -15,7 +21,6 @@
   padding: 2px 4px 6px 32px;
 }
 
-.fiberDetails > div,
 .timelineDetails > div {
   display: contents;
 }
