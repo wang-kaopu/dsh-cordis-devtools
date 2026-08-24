@@ -9,6 +9,7 @@ import { chromium } from 'playwright'
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2'
 const repoRoot = process.cwd()
 const probeRoot = join(repoRoot, 'e2e', 'fixtures', 'waterfall-probe')
+const agentDebuggingProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'agent-debugging-probe')
 const inspectProbeRoot = join(repoRoot, 'e2e', 'fixtures', 'cordis-inspect-probe')
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-cordis-devtools-e2e-'))
@@ -35,6 +36,10 @@ try {
   ], { env })
   await run(pnpm, [
     'dlx', DSH_PACKAGE,
+    'plugin', '--profile', 'web', 'add', agentDebuggingProbeRoot,
+  ], { env })
+  await run(pnpm, [
+    'dlx', DSH_PACKAGE,
     'plugin', '--profile', 'web', 'add', inspectProbeRoot,
   ], { env })
 
@@ -55,7 +60,7 @@ try {
   server.stderr.on('data', appendServerOutput)
 
   await waitForServer(baseUrl, server)
-  await waitForOutput('[cordis-devtools-e2e] CordisRuntime inspect OK', server)
+  await waitForOutput('[cordis-devtools-e2e] CordisRuntime duplicate-fiber inspect OK', server)
 
   browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
