@@ -233,7 +233,7 @@ function tool(name: string, description: string, inputSchema: Tool['inputSchema'
 }
 
 function objectSchema(
-  properties: Record<string, unknown>,
+  properties: Record<string, object>,
   required?: string[],
 ): Tool['inputSchema'] {
   return {
