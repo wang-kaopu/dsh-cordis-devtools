@@ -6,6 +6,7 @@ import type {
   ListenerSnapshot,
   LiveFiberSnapshot,
 } from '../../shared/types.js'
+import detailCss from '../DetailList.module.css'
 import css from '../DevtoolsPanel.module.css'
 
 export interface FibersViewProps {
@@ -88,7 +89,7 @@ export function FibersView({
               <FiberStat label="recent dispatch-context hits" value={recentDispatchHits} />
             </div>
 
-            <dl className={css.fiberDetails}>
+            <dl className={detailCss.fiberDetails}>
               <div>
                 <dt>state</dt>
                 <dd>{activeFiber.state}</dd>
@@ -107,7 +108,7 @@ export function FibersView({
                   {activeFiber.inject.length === 0 ? (
                     <span className={css.muted}>none</span>
                   ) : (
-                    <span className={css.detailPills}>
+                    <span className={detailCss.detailPills}>
                       {activeFiber.inject.map(name => <Pill key={name}>{name}</Pill>)}
                     </span>
                   )}
@@ -119,7 +120,7 @@ export function FibersView({
                   {ownedEvents.length === 0 ? (
                     <span className={css.muted}>none</span>
                   ) : (
-                    <span className={css.detailPills}>
+                    <span className={detailCss.detailPills}>
                       {ownedEvents.map(name => (
                         <Pill key={name} onClick={() => { onOpenEvent(name) }}>{name}</Pill>
                       ))}
