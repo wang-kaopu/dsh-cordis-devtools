@@ -1,8 +1,8 @@
 # dsh-cordis-devtools
 
-Runtime inspector and opt-in waterfall profiler for DeepSeek Harness / Cordis.
+Runtime diagnostics and opt-in waterfall profiler for DeepSeek Harness / Cordis — usable by developers, in-process DSH agents, and external MCP clients.
 
-> Current repository version: **0.3.0**. The default path remains observer-first and behavior-neutral; waterfall instrumentation is enabled only by an explicit DevTools action.
+> Current repository version: **0.4.0**. The default path remains observer-first and behavior-neutral; waterfall instrumentation is enabled only by an explicit DevTools action.
 >
 > Repository version readiness does **not** imply that an npm package or Git tag has been published.
 
@@ -16,6 +16,9 @@ Runtime inspector and opt-in waterfall profiler for DeepSeek Harness / Cordis.
 - Explicit opt-in **Waterfall Profiler** with entered listener spans, timing facts, outcome categories, repeated/late `next()` call records, and owner → Fiber navigation.
 - Bounded profiler trace retention separated from the observer snapshot path.
 - One DSH sidebar DevTools surface with `Events`, `Timeline`, `Fibers`, and `Profiler` views.
+- Shared transport-neutral **Runtime Diagnostics Query** layer for targeted runtime summary, Event, Fiber, dispatch, and existing profiler-trace reads.
+- DSH-native `CordisRuntime` Inspect Provider through the existing first-party `cordisInspect` registry.
+- Optional embedded **MCP Streamable HTTP** endpoint for external coding agents, loopback-only and disabled by default.
 - Loopback-only Host → browser diagnostics/control through DSH Connection RPC.
 - DSH-native control chrome through `@deepseek-ai/dsh-client-ui-primitives`.
 
@@ -23,7 +26,7 @@ Runtime inspector and opt-in waterfall profiler for DeepSeek Harness / Cordis.
 
 ### Observer mode — default
 
-Installing the plugin, opening Cordis DevTools, polling Events/Timeline/Fibers, or opening the Profiler view does **not** enable instrumentation.
+Installing the plugin, opening Cordis DevTools, polling Events/Timeline/Fibers, using the read-only Agent diagnostics, or opening the Profiler view does **not** enable instrumentation.
 
 Observer mode:
 
@@ -48,45 +51,38 @@ Instrumented mode is intentionally not described as zero-side-effect observation
 ## Architecture
 
 ```text
-Cordis runtime
-  ├─ listener registry / ctx.registry / fiber.getEffects()
-  ├─ internal lifecycle + dispatch signals
-  │
-  ├──────────── observer path ────────────────┐
-  │                                           ▼
-  │                                  ObserverCollector
-  │                                     ├─ events/listeners
-  │                                     ├─ live fibers/effects
-  │                                     └─ bounded dispatches
-  │
-  └── explicit waterfall instrumentation ────┐
-                                              ▼
-                               WaterfallInstrumentationController
-                                              │
-                                              ▼
-                                    WaterfallTraceStore
-                                      bounded/upserted
-                                              │
-                          ┌───────────────────┴───────────────────┐
-                          ▼                                       ▼
-               observer snapshot RPC                   profiler snapshot/control RPC
-                  loopback-only                              loopback-only
-                          │                                       │
-                          ▼                                       ▼
-                EventExplorerStore                         ProfilerStore
-                panel-open polling                     profiler-tab-only polling
-                          │                                       │
-                          └───────────────────┬───────────────────┘
-                                              ▼
-                                      Cordis DevTools Web
-                              Events | Timeline | Fibers | Profiler
+                         Cordis runtime
+                              │
+              ┌───────────────┴────────────────┐
+              │                                │
+       observer collection          explicit waterfall instrumentation
+              │                                │
+              ▼                                ▼
+      ObserverCollector          WaterfallInstrumentationController
+              │                                │
+              └───────────────┬────────────────┘
+                              ▼
+                       DevtoolsService
+                              │
+             ┌────────────────┴────────────────┐
+             │                                 │
+             ▼                                 ▼
+   browser RPC / profiler RPC        RuntimeDiagnosticsQuery
+             │                         read-only facts
+             ▼                         /          \
+      Cordis DevTools Web             ▼            ▼
+ Events | Timeline | Fibers     CordisRuntime     MCP
+          | Profiler             Inspect Provider  127.0.0.1 only
+                                      │            │
+                                      ▼            ▼
+                                  DSH Agent    External agents
 ```
 
 Direct listener-registry / live-Fiber implementation access remains isolated behind `src/host/cordis-adapter.ts`. Waterfall instrumentation compatibility logic lives in `src/host/instrumentation/waterfall-controller.ts`; observer collection does not depend on it.
 
-`DevtoolsService` composes the observer collector, bounded profiler trace store, and instrumentation controller while keeping their transport contracts separate. The existing observer `snapshot` endpoint does not grow profiler traces.
+`RuntimeDiagnosticsQuery` does not create a second runtime model. It performs targeted reads over the same observer/profiler facts already owned by `DevtoolsService`, so DSH Inspect and MCP share evidence semantics instead of implementing their own runtime traversal.
 
-See [the architecture document](docs/architecture.md) for the detailed invariants and compatibility boundary.
+See [the architecture document](docs/architecture.md) and [Agent Runtime Diagnostics guide](docs/agent-runtime-diagnostics.md) for detailed invariants and machine-facing semantics.
 
 ## Web Cordis DevTools
 
@@ -130,6 +126,54 @@ Repeated or late `next()` is displayed as recorded behavior rather than normaliz
 
 `conflict` and `unsupported` instrumentation states are visible and do not expose a misleading enable/disable action.
 
+## Agent Runtime Diagnostics
+
+The Agent-facing surface is deliberately read-only in v0.4. It exposes five logical queries over the live runtime:
+
+- `runtimeSummary`;
+- `inspectEvent`;
+- `inspectFiber`;
+- `searchDispatches`;
+- `profilerTraces`.
+
+### DSH Agent path
+
+When the DSH composition provides the first-party `cordisInspect` registry, this plugin registers a Host provider named `CordisRuntime`. Existing DSH model tools discover and invoke it through the normal `cordis_inspect_list` / `cordis_inspect_query` path; the plugin does not register a duplicate model-tool family.
+
+### External Agent path — MCP
+
+MCP is disabled by default. Enable it explicitly in the plugin config:
+
+```yaml
+- id: dsh-cordis-devtools
+  name: dsh-cordis-devtools
+  config:
+    mcp:
+      enabled: true
+      port: 43127
+      failOnStartupError: false
+```
+
+The endpoint is then available at:
+
+```text
+http://127.0.0.1:43127/mcp
+```
+
+The five MCP tools are:
+
+```text
+cordis_runtime_summary
+cordis_inspect_event
+cordis_inspect_fiber
+cordis_search_dispatches
+cordis_profiler_traces
+```
+
+All are marked read-only and idempotent. A listener bind failure is logged and contained to the optional MCP adapter by default; `failOnStartupError: true` makes MCP availability required for plugin activation. No v0.4 configuration can widen the bind beyond loopback.
+
+See [Agent Runtime Diagnostics](docs/agent-runtime-diagnostics.md) for evidence semantics and example Agent flows.
+
 ## Refresh and retention semantics
 
 The observer and profiler client stores are intentionally separate:
@@ -143,7 +187,7 @@ The observer and profiler client stores are intentionally separate:
 - failed refreshes preserve the last successful snapshot and mark it stale;
 - explicit profiler mutation can abort a background profiler read so the user action is not lost.
 
-Host observer dispatch retention and profiler trace retention are independently bounded. Neither path is a lossless audit stream.
+Host observer dispatch retention and profiler trace retention are independently bounded. Agent dispatch/trace queries expose `bounded`, `retained`, `matched`, `returned`, and `truncated` metadata instead of upgrading retained evidence into a complete-history claim.
 
 ## Project structure
 
@@ -152,6 +196,9 @@ src/
 ├─ host/
 │  ├─ collector.ts                         # behavior-neutral observer core
 │  ├─ cordis-adapter.ts                    # listener/live-fiber compatibility seam
+│  ├─ diagnostics.ts                       # transport-neutral targeted runtime queries
+│  ├─ cordis-inspect.ts                    # DSH CordisRuntime Provider adapter
+│  ├─ mcp.ts                               # embedded loopback MCP adapter
 │  ├─ service.ts                           # observer + profiler composition
 │  ├─ rpc.ts                               # loopback Connection RPC adapter
 │  ├─ ring-buffer.ts                       # bounded observer dispatch history
@@ -159,6 +206,7 @@ src/
 │  └─ instrumentation/
 │     └─ waterfall-controller.ts           # explicit waterfall instrumentation seam
 ├─ shared/
+│  ├─ diagnostics.ts                       # machine-facing diagnostics contracts
 │  ├─ rpc.ts                               # observer/profiler endpoint constants
 │  ├─ types.ts                             # observer snapshot contracts
 │  └─ trace.ts                             # waterfall trace/status contracts
@@ -191,7 +239,7 @@ src/
 - real DSH Web smoke;
 - observer release-hardening invariants.
 
-### v0.3 — Opt-in waterfall Profiler ✓ repository-ready
+### v0.3 — Opt-in waterfall Profiler ✓
 
 - approved explicit instrumentation architecture;
 - serializable waterfall trace contract and real Cordis behavior matrix;
@@ -199,12 +247,22 @@ src/
 - paired instrumented-vs-baseline semantic parity harness;
 - bounded profiler trace store and separate loopback transport;
 - fourth Profiler view with explicit enable/disable control;
-- real DSH Web integration exercising enable → real waterfall trace → inspect → disable;
-- release-hardening/privacy/retention documentation and tests.
+- real DSH Web integration exercising enable → real waterfall trace → inspect → disable.
 
-`selfTime`, definitive chain-stop/short-circuit conclusions, payload capture, and profiling of `emit` / `parallel` / `serial` / `bail` remain intentionally outside v0.3.
+### v0.4 — Agent Runtime Diagnostics ✓ repository-ready
 
-Detailed milestone evidence is in [the roadmap](docs/roadmap.md).
+- shared targeted Runtime Diagnostics Query layer;
+- DSH-native `CordisRuntime` Inspect Provider;
+- embedded loopback-only MCP Streamable HTTP endpoint;
+- five read-only machine-facing runtime queries/tools;
+- canonical DSH/MCP evidence semantics for live vs historical and bounded vs truncated facts;
+- real DSH duplicate-Fiber proof through Cordis Inspect;
+- official external MCP Client proof against the same running DSH process;
+- one final real DSH smoke covering Cordis Inspect + external MCP + Human DevTools/Profiler together.
+
+Profiler mutation tools, automatic root-cause `diagnose()`, remote/LAN MCP exposure, stdio bridge, automatic client configuration, multi-runtime discovery, persistent checkpoints/diffs, payload capture, and profiling of non-waterfall modes remain intentionally deferred beyond the first v0.4 slice.
+
+Detailed v0.4 milestone evidence is in [the v0.4 roadmap](docs/v0.4-roadmap.md).
 
 ## Install into a DSH Web profile
 
@@ -221,7 +279,7 @@ Then add it to a Web profile:
 dsh plugin --profile web add ./
 ```
 
-Open **Cordis DevTools** from the DSH Web sidebar footer. Diagnostics/control RPC is registered with loopback authority.
+Open **Cordis DevTools** from the DSH Web sidebar footer. Diagnostics/control RPC is registered with loopback authority. DSH Agent access uses the existing Cordis Inspect infrastructure when present; external Agent access requires explicitly enabling MCP as shown above.
 
 ## Development
 
@@ -235,9 +293,9 @@ pnpm verify:client-bundle
 pnpm test:e2e:web
 ```
 
-CI also runs the real DSH Web smoke in Chromium against a disposable profile. The v0.3 smoke installs an E2E-only Cordis waterfall probe so the browser path can deterministically inspect a real Host trace without a model call or API key. The probe fixture is not part of the published package files or production plugin runtime.
+CI runs the real DSH Web smoke in Chromium against a disposable profile. The v0.4 smoke creates a deterministic duplicate-Fiber runtime shape, proves it through the real DSH `CordisRuntime` Inspect path, connects an official MCP Client from outside the running DSH process to prove the same evidence, and then continues the existing human UI + real waterfall Profiler assertions. E2E fixtures are not part of the published package files or production plugin runtime.
 
-The I3 overhead harness compares disabled and enabled representative waterfall samples as regression evidence. It intentionally does not impose a fixed percentage budget on hosted CI runners because those timings are noisy.
+The existing waterfall overhead harness compares disabled and enabled representative samples as regression evidence. It intentionally does not impose a fixed percentage budget on hosted CI runners because those timings are noisy.
 
 ## Agent-native workflow
 
@@ -248,9 +306,13 @@ This repository treats cold-start coding agents as first-class contributors. Sta
 - Invocation mode is a dispatch-level fact, not static event metadata.
 - Observer `registeredListeners` is the raw registered count, not proof that every listener executed after context filtering.
 - `DevtoolsSnapshot.fibers` and Effects are live inventory; historical dispatch Fiber references can outlive the Fiber.
+- Empty Agent dispatch results mean “not observed in the retained bounded window,” not “never happened.”
+- `truncated: true` means a query limit omitted retained matches; `bounded: true` separately means older runtime history may already have been overwritten.
 - Profiler traces are bounded snapshots that can be updated while late continuation facts arrive; they are not a lossless persistent trace database.
+- Read-only Agent diagnostics do not enable profiler instrumentation.
 - Instrumented mode currently targets the validated Cordis 4.0.1 compatibility behavior and fails closed when its required seam is unavailable or already owned by another runtime patch.
 - Raw event arguments, return values, error details, prompts, tool results, plugin config, file contents, credentials, and raw effect functions/disposers are not collected by the current contracts.
+- Loopback-only MCP is not a confidentiality boundary against untrusted software running on the same machine/account; broader access or authentication requires a separate design decision.
 
 ## License
 
