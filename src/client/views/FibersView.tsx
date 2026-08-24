@@ -6,6 +6,7 @@ import type {
   ListenerSnapshot,
   LiveFiberSnapshot,
 } from '../../shared/types.js'
+import detailCss from '../DetailList.module.css'
 import css from '../DevtoolsPanel.module.css'
 
 export interface FibersViewProps {
@@ -88,37 +89,46 @@ export function FibersView({
               <FiberStat label="recent dispatch-context hits" value={recentDispatchHits} />
             </div>
 
-            <div className={css.fiberFacts}>
-              <Detail label="state" value={activeFiber.state} />
-              <Detail
-                label="parent"
-                value={activeFiber.parent === null
-                  ? 'unknown'
-                  : `${activeFiber.parent.name} · uid ${activeFiber.parent.uid ?? 'disposed'} · ${activeFiber.parent.state}`}
-              />
-              <div className={css.fiberInjectRow}>
-                <span className={css.detailLabel}>inject</span>
-                {activeFiber.inject.length === 0 ? (
-                  <span className={css.muted}>none</span>
-                ) : (
-                  <span className={css.injectPills}>
-                    {activeFiber.inject.map(name => <Pill key={name}>{name}</Pill>)}
-                  </span>
-                )}
+            <dl className={detailCss.fiberDetails}>
+              <div>
+                <dt>state</dt>
+                <dd>{activeFiber.state}</dd>
               </div>
-              <div className={css.fiberInjectRow}>
-                <span className={css.detailLabel}>events</span>
-                {ownedEvents.length === 0 ? (
-                  <span className={css.muted}>none</span>
-                ) : (
-                  <span className={css.injectPills}>
-                    {ownedEvents.map(name => (
-                      <Pill key={name} onClick={() => { onOpenEvent(name) }}>{name}</Pill>
-                    ))}
-                  </span>
-                )}
+              <div>
+                <dt>parent</dt>
+                <dd>
+                  {activeFiber.parent === null
+                    ? 'unknown'
+                    : `${activeFiber.parent.name} · uid ${activeFiber.parent.uid ?? 'disposed'} · ${activeFiber.parent.state}`}
+                </dd>
               </div>
-            </div>
+              <div>
+                <dt>inject</dt>
+                <dd>
+                  {activeFiber.inject.length === 0 ? (
+                    <span className={css.muted}>none</span>
+                  ) : (
+                    <span className={detailCss.detailPills}>
+                      {activeFiber.inject.map(name => <Pill key={name}>{name}</Pill>)}
+                    </span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>events</dt>
+                <dd>
+                  {ownedEvents.length === 0 ? (
+                    <span className={css.muted}>none</span>
+                  ) : (
+                    <span className={detailCss.detailPills}>
+                      {ownedEvents.map(name => (
+                        <Pill key={name} onClick={() => { onOpenEvent(name) }}>{name}</Pill>
+                      ))}
+                    </span>
+                  )}
+                </dd>
+              </div>
+            </dl>
 
             <EffectsSection
               fiberUid={activeFiber.uid}
@@ -138,15 +148,6 @@ function FiberStat({ label, value }: { label: string; value: number }) {
     <div className={css.fiberStat}>
       <strong className={css.fiberStatValue}>{value}</strong>
       <span className={css.fiberStatLabel}>{label}</span>
-    </div>
-  )
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={css.timelineDetailRow}>
-      <span className={css.detailLabel}>{label}</span>
-      <span className={css.detailValue}>{value}</span>
     </div>
   )
 }

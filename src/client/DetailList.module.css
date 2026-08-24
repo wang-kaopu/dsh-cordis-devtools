@@ -1,0 +1,47 @@
+.fiberDetails,
+.timelineDetails {
+  display: grid;
+  margin: 0;
+}
+
+.fiberDetails {
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px 10px;
+}
+
+.timelineDetails {
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 7px 10px;
+  padding: 2px 4px 6px 32px;
+}
+
+.fiberDetails > div,
+.timelineDetails > div {
+  display: contents;
+}
+
+.fiberDetails dt,
+.timelineDetails dt {
+  color: var(--dsw-alias-label-secondary, #68707a);
+  font-size: 10px;
+  line-height: 24px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.fiberDetails dd,
+.timelineDetails dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.detailPills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+}

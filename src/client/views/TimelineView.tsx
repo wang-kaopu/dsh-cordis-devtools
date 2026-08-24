@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { DisclosureRow, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DispatchRecord } from '../../shared/types.js'
+import detailCss from '../DetailList.module.css'
 import css from '../DevtoolsPanel.module.css'
 
 export interface TimelineViewProps {
@@ -49,7 +50,7 @@ export function TimelineView({
                     </span>
                   )}
                 >
-                  <div className={css.timelineDetail}>
+                  <dl className={detailCss.timelineDetails}>
                     <Detail label="dispatch id" value={String(record.id)} />
                     <Detail label="mode" value={String(record.mode)} />
                     <Detail label="arguments" value={String(record.argCount)} />
@@ -60,14 +61,14 @@ export function TimelineView({
                         ? 'unknown'
                         : contextIsLive && context.uid !== null
                           ? (
-                              <span className={css.injectPills}>
+                              <span className={detailCss.detailPills}>
                                 <Pill onClick={() => { onOpenFiber(context.uid as number) }}>{context.name}</Pill>
                                 <span>uid {context.uid} · {context.state}</span>
                               </span>
                             )
                           : `${context.name} · uid ${context.uid ?? 'disposed'} · ${context.state} · not live`}
                     />
-                  </div>
+                  </dl>
                 </DisclosureRow>
               </div>
             )
@@ -80,9 +81,9 @@ export function TimelineView({
 
 function Detail({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className={css.timelineDetailRow}>
-      <span className={css.detailLabel}>{label}</span>
-      <span className={css.detailValue}>{value}</span>
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
   )
 }
