@@ -86,13 +86,32 @@ try {
     'cordis_profiler_traces',
     'cordis_capture_checkpoint',
     'cordis_compare_current',
+    'cordis_list_debug_targets',
+    'cordis_attach_debug_session',
+    'cordis_debug_snapshot',
+    'cordis_wait_for_runtime_change',
+    'cordis_detach_debug_session',
     'cordis_waterfall_experiment_status',
     'cordis_start_waterfall_experiment',
     'cordis_stop_waterfall_experiment',
   ])
   assertDisabled(await mcpCall('cordis_waterfall_experiment_status'))
 
-  const started = await mcpCall('cordis_start_waterfall_experiment', { ttlMs: 5_000 })
+  const targetsResult = await mcpClient.callTool({ name: 'cordis_list_debug_targets', arguments: {} })
+  assert.notEqual(targetsResult.isError, true)
+  const target = targetsResult.structuredContent?.targets?.find(candidate => (
+    candidate.type === 'cordis-runtime' && candidate.status === 'active'
+  ))
+  assert.ok(target, 'missing active cordis-runtime Agent Debug target')
+  const attachResult = await mcpClient.callTool({
+    name: 'cordis_attach_debug_session',
+    arguments: { targetId: target.targetId },
+  })
+  assert.notEqual(attachResult.isError, true)
+  const debugSessionId = attachResult.structuredContent?.debugSessionId
+  assert.equal(typeof debugSessionId, 'string')
+
+  const started = await mcpCall('cordis_start_waterfall_experiment', { ttlMs: 5_000, debugSessionId })
   assert.equal(started.outcome, 'started')
   assert.equal(started.lease?.source, 'mcp')
   const leaseId = started.lease?.leaseId
@@ -103,9 +122,12 @@ try {
   assert.ok(traces.traces.every(trace => trace.experimentId === leaseId))
   assert.ok(traces.traces.every(trace => trace.event === CONTROLLED_EVENT))
 
-  const stale = await mcpCall('cordis_stop_waterfall_experiment', { leaseId: `${leaseId}-stale` })
-  assert.equal(stale.outcome, 'lease-mismatch')
-  assert.equal(stale.status?.owner?.leaseId, leaseId)
+  const stale = await mcpClient.callTool({
+    name: 'cordis_stop_waterfall_experiment',
+    arguments: { leaseId: `${leaseId}-stale`, debugSessionId },
+  })
+  assert.equal(stale.isError, true)
+  assert.match(stale.content?.[0]?.text ?? '', /not owned by this Agent Debug session/)
 
   // While MCP owns instrumentation, Human DevTools must show ownership and the
   // only local action must be the authoritative emergency stop.
@@ -132,6 +154,12 @@ try {
     document.querySelector('[data-testid="cordis-devtools-profiler-toggle"]')?.textContent === 'Enable profiling'
   ), undefined, { timeout: 10_000 })
   assertDisabled(await mcpCall('cordis_waterfall_experiment_status'))
+
+  const stopped = await mcpCall('cordis_stop_waterfall_experiment', { leaseId, debugSessionId })
+  assert.equal(stopped.outcome, 'not-active')
+  const detachedDebugSession = await mcpCall('cordis_detach_debug_session', { debugSessionId })
+  assert.equal(detachedDebugSession.debugSessionId, debugSessionId)
+  assert.equal(detachedDebugSession.status, 'detached')
 
   // A later lease proves finite TTL cleanup independently of the Human stop.
   const expiring = await mcpCall('cordis_start_waterfall_experiment', { ttlMs: 400 })

@@ -1,10 +1,10 @@
-# dsh-cordis-devtools
+# DSH DevTools for Agents
 
-Runtime diagnostics, before/after verification, and controlled waterfall experiments for DeepSeek Harness / Cordis — usable by developers, in-process DSH agents, and external MCP clients.
+Agent-oriented runtime inspection and debugging for DeepSeek Harness / Cordis. The product surface is MCP plus a small JSON CLI and an installable debugging Skill; the Host remains the source of truth for live Events, listeners, Fibers, dispatch history, verification checkpoints, and controlled waterfall profiling.
 
-> Current repository version: **0.6.0**. Diagnostics and Runtime Verification remain read-only; v0.6 additionally lets Agents request one finite, authority-gated waterfall profiling experiment through the shared Host coordinator.
+> Current feature line: **v0.7 — DSH DevTools for Agents**. v0.7 adds target discovery, bounded debug sessions, metadata-only runtime snapshots, resumable bounded waits with explicit gap results, mechanical candidate evidence, a CLI, and the [DSH runtime-debugging Skill](skills/dsh-runtime-debugging/SKILL.md). Diagnostics and Runtime Verification remain read-only; waterfall profiling remains a separate finite, authority-gated experiment.
 >
-> Repository version readiness does **not** imply that an npm package, Git tag, or GitHub Release has been published.
+> Repository readiness does **not** imply that an npm package, Git tag, or GitHub Release has been published.
 
 ## Current capabilities
 
@@ -21,6 +21,12 @@ Runtime diagnostics, before/after verification, and controlled waterfall experim
 - Multiplicity-preserving Event / Listener / Fiber comparison that ignores runtime-local id/uid churn and capture-local listener order as cross-checkpoint identity.
 - DSH-native `CordisRuntime` Inspect Provider through the existing first-party `cordisInspect` registry.
 - Optional embedded **MCP Streamable HTTP** endpoint for external coding agents, loopback-only and disabled by default.
+- Agent Debug target discovery and opaque target epochs so a reload/disposal cannot silently reuse an old runtime identity.
+- Bounded Agent Debug sessions with explicit attach/detach, idle expiry, stale-target state, and cleanup of session-owned waits, cursors, and experiment leases.
+- Metadata-only cold-start runtime snapshots with bounded, cursor-paged Event, Fiber, dispatch, profiler, and mechanical-candidate sections.
+- Resumable `cordis_wait_for_runtime_change` waits with exact type/Event filters, bounded timeouts, monotonic sequences, and explicit `found`, `timeout`, and retained-window `gap` outcomes.
+- Mechanical candidate evidence for duplicate live Fibers, equivalent registrations, orphaned owners, trace `next()` anomalies, and instrumentation conflicts; candidates never claim a root cause or remediation.
+- `dsh-cordis-debug` JSON CLI for target listing, snapshots, focused Event/Fiber inspection, bounded waits, checkpoint persistence/comparison, and finite profiling requests.
 - One shared **WaterfallExperimentCoordinator** that owns all instrumentation mutation across Human UI, DSH Agent tools, and external MCP experiment tools.
 - Finite Agent leases with exact ownership, TTL cleanup, stale-stop protection, Human emergency stop, and experiment-tagged traces.
 - DSH start/stop experiment tools where start requires one-shot `ctx.approval` and stop performs exact-lease cleanup without a second approval.
@@ -73,7 +79,7 @@ Instrumentation records only profiling metadata: event identity, listener regist
 
 Instrumented mode is intentionally not described as zero-side-effect observation. Promise settlement timing uses side observation while returning the original Promise/thenable identity to the caller; this can affect host-level handled/unhandled bookkeeping. The default observer path does not install that behavior.
 
-## Architecture
+## Product architecture and routes
 
 ```text
                               Cordis runtime
@@ -92,29 +98,32 @@ Instrumented mode is intentionally not described as zero-side-effect observation
                                   ▼        │        │        │
                            DevtoolsService │        │        │
                                   │       Human     DSH      MCP
-                    ┌─────────────┴─────────────┐
-                    │                           │
-                    ▼                           ▼
-          browser RPC / profiler RPC   RuntimeDiagnosticsQuery
-                    │                   read-only facts/status
-                    ▼                           │
-             Cordis DevTools Web               ▼
-       Events | Timeline | Fibers      Runtime Verification
-                 | Profiler           checkpoint + semantic diff
-                                               /          \
-                                              ▼            ▼
-                                      CordisRuntime       MCP
-                                      Inspect Provider    127.0.0.1 only
-                                              │            │
-                                              ▼            ▼
-                                          DSH Agent    External agents
+                         ┌────────┴─────────┐
+                         ▼                  ▼
+              AgentDebugService       RuntimeDiagnosticsQuery
+              target/session/        focused facts + verification
+              snapshot/wait                    │
+                   │                            ▼
+        ┌──────────┼──────────┐          DSH CordisRuntime
+        ▼          ▼          ▼          Inspect Provider
+       MCP        CLI       Skill              │
+   Streamable HTTP  JSON   workflow             ▼
+       │          │          │             DSH in-process Agent
+       └──────────┴──────────┘
+          external coding Agents
+
+                    browser RPC / profiler RPC → Cordis DevTools Web
 ```
 
 Direct listener-registry / live-Fiber implementation access remains isolated behind `src/host/cordis-adapter.ts`. Low-level waterfall compatibility logic lives in `src/host/instrumentation/waterfall-controller.ts`; ownership/TTL policy lives in `waterfall-experiment-coordinator.ts`; observer collection does not depend on either.
 
 `RuntimeDiagnosticsQuery` and Runtime Verification do not create a second runtime model. They perform targeted reads and canonical projections over the same observer/profiler facts owned by `DevtoolsService`, so DSH Inspect and MCP share evidence semantics instead of implementing their own runtime traversal or diff algorithms.
 
-See [the architecture document](docs/architecture.md), [Agent Runtime Diagnostics guide](docs/agent-runtime-diagnostics.md), [v0.5 Runtime Verification design](docs/v0.5-runtime-verification.md), and [v0.6 Controlled Runtime Experiments](docs/v0.6-controlled-runtime-experiments.md) for detailed invariants.
+`AgentDebugService` is transport-neutral. MCP and the CLI call the same target/session/snapshot/wait semantics; focused diagnostics, checkpoints, and the shared experiment coordinator remain the same Host-owned facts. This is intentionally an Agent product layer, not a general-purpose DSH control plane.
+
+There is no raw CDP-compatible WebSocket endpoint in v0.7. A CDP-like wire protocol is deferred until a concrete IDE or dedicated debugger needs it; current Agent access is through MCP, the CLI, and the Skill workflow.
+
+See [the architecture document](docs/architecture.md), [Agent Runtime Diagnostics guide](docs/agent-runtime-diagnostics.md), [v0.5 Runtime Verification design](docs/v0.5-runtime-verification.md), [v0.6 Controlled Runtime Experiments](docs/v0.6-controlled-runtime-experiments.md), and the [v0.7 Agent Debug decision](.agents/notes/implemented/architecture/2026-08-25-dsh-devtools-for-agents.md) for detailed invariants.
 
 ## Web Cordis DevTools
 
@@ -142,18 +151,44 @@ Human ownership presents the ordinary `Disable profiling` action. An Agent-owned
 
 Repeated or late `next()` is displayed as recorded behavior rather than normalized into a single continuation. The UI does not invent `selfTime` or a definitive `shortCircuit`/`veto` boolean from incomplete continuation evidence.
 
-## Agent Runtime Diagnostics and Verification
+## Agent Debug workflow
 
-The read-only Agent surface exposes:
+The v0.7 Agent surface follows a Chrome DevTools-style workflow at the product level, while using MCP tools rather than exposing raw protocol frames:
 
-- `runtimeSummary`;
-- `inspectEvent`;
-- `inspectFiber`;
-- `searchDispatches`;
-- `profilerTraces` (optionally exact-filtered by `experimentId`);
-- `captureCheckpoint`;
-- `compareCurrent`;
-- read-only waterfall experiment status.
+```text
+cordis_list_debug_targets
+        ↓ targetId + targetEpoch
+cordis_attach_debug_session
+        ↓ debugSessionId
+cordis_debug_snapshot ──→ focused evidence tools
+        ↓                         │
+cordis_wait_for_runtime_change    │
+        ↓                         │
+checkpoint → normal edit/reload → compareCurrent
+        ↓
+cordis_detach_debug_session
+```
+
+There is one active `cordis-runtime` target in v0.7. Each target incarnation has an opaque `targetId` and monotonic `targetEpoch`. Replacing or disposing the target makes earlier sessions stale; Agents must list and attach again instead of reusing ids, cursors, sequence numbers, checkpoints, or leases across incarnations.
+
+An attached `debugSessionId` owns bounded catalog cursors and pending waits. Sessions are explicitly detachable, expire after an idle TTL, and release session-owned experiment leases and waiters when they end. Session state is lifecycle evidence, not a guarantee that the runtime has not changed between calls.
+
+`cordis_debug_snapshot` is the cold-start exploration operation. It returns a metadata-only snapshot with optional `summary`, `events`, `fibers`, `dispatches`, `profiler`, and `candidates` sections. Event, Fiber, dispatch, and candidate catalogs are bounded and cursor-paged; each page carries `bounded`, `returned`, `total`, `truncated`, `cursor`, and `nextCursor` facts. The profiler section reports retained waterfall traces/status counts without enabling instrumentation.
+
+`cordis_wait_for_runtime_change` waits for one exact metadata-only observation after an optional `afterSequence` barrier. Supported observation types are `dispatch-observed`, `topology-invalidated`, `profiler-trace-updated`, `profiler-status-changed`, and `target-disposed`. The result is one of `found`, factual `timeout`, or explicit retained-window `gap`; `gap: true` means the requested cursor is older than the bounded journal and must be recovered with a fresh snapshot. A timeout or empty bounded result never means that an event never happened.
+
+The focused read-only Agent surface remains available:
+
+- `cordis_runtime_summary`;
+- `cordis_inspect_event`;
+- `cordis_inspect_fiber`;
+- `cordis_search_dispatches`;
+- `cordis_profiler_traces` (optionally exact-filtered by `experimentId`);
+- `cordis_capture_checkpoint`;
+- `cordis_compare_current`;
+- `cordis_waterfall_experiment_status` when the coordinator is exposed.
+
+The five v0.7 session tools are also read-only: `cordis_list_debug_targets`, `cordis_attach_debug_session`, `cordis_debug_snapshot`, `cordis_wait_for_runtime_change`, and `cordis_detach_debug_session`. Snapshot candidates are mechanical evidence only; they never emit root-cause, `fixed`, remediation, or confidence claims.
 
 ### Runtime Verification workflow
 
@@ -206,7 +241,7 @@ cordis_stop_waterfall_experiment({ leaseId })
 
 ### External Agent path — MCP
 
-MCP stays disabled by default. Read-only v0.5 compatibility remains available with the original configuration:
+MCP stays disabled by default. When enabled, the endpoint is Streamable HTTP on loopback and exposes the seven focused read-only tools plus the five v0.7 Agent Debug session tools:
 
 ```yaml
 - id: dsh-cordis-devtools
@@ -218,7 +253,31 @@ MCP stays disabled by default. Read-only v0.5 compatibility remains available wi
       failOnStartupError: false
 ```
 
-That exposes the original seven read-only MCP tools at `http://127.0.0.1:43127/mcp`.
+That exposes the MCP endpoint at `http://127.0.0.1:43127/mcp`.
+
+The seven focused read-only tools are:
+
+```text
+cordis_runtime_summary
+cordis_inspect_event
+cordis_inspect_fiber
+cordis_search_dispatches
+cordis_profiler_traces
+cordis_capture_checkpoint
+cordis_compare_current
+```
+
+The v0.7 Agent Debug tools are:
+
+```text
+cordis_list_debug_targets
+cordis_attach_debug_session
+cordis_debug_snapshot
+cordis_wait_for_runtime_change
+cordis_detach_debug_session
+```
+
+The session tools are read-only, but attach/detach establish lifecycle state and snapshot/wait use bounded Host resources. Keep the returned target/session ids and detach when the debugging task ends.
 
 To grant external controlled-experiment authority, explicitly configure both a bearer token and the experiment capability:
 
@@ -244,9 +303,42 @@ cordis_start_waterfall_experiment    # mutation, finite lease
 cordis_stop_waterfall_experiment     # exact-lease cleanup
 ```
 
+When a debug session owns the experiment, include its exact `debugSessionId` in start/stop calls; the Host then releases the lease when that session detaches, expires, or becomes stale. Without a session id, the legacy MCP experiment path remains available under the same coordinator, token, capability, exact-lease, TTL, and Human emergency-stop rules.
+
 `cordis_profiler_traces` accepts an exact `experimentId`, so an external Agent can retrieve its own retained trace subset without timestamp inference. Retention remains bounded; exact filtering does not turn the trace store into a lossless experiment log.
 
 A listener bind failure is contained to the optional MCP adapter by default; `failOnStartupError: true` makes MCP availability required for plugin activation.
+
+### JSON CLI
+
+The package exposes `dsh-cordis-debug`, a one-shot JSON CLI built on the same MCP tools. It requires a loopback MCP endpoint and a bearer token, supplied either as global flags or environment variables:
+
+```bash
+export DSH_CORDIS_DEBUG_ENDPOINT=http://127.0.0.1:43127/mcp
+export DSH_CORDIS_DEBUG_TOKEN="$CORDIS_DEVTOOLS_MCP_TOKEN"
+dsh-cordis-debug targets
+```
+
+Equivalent flags are `--endpoint URL` / `--endpoint=URL` and `--token VALUE` / `--token=VALUE`. The CLI accepts only `http`/`https` loopback endpoints (`localhost`, `127.0.0.1`, or `[::1]`) and emits one JSON value or one structured JSON error per invocation.
+
+Available commands:
+
+```text
+dsh-cordis-debug targets
+dsh-cordis-debug snapshot
+dsh-cordis-debug event EVENT_NAME
+dsh-cordis-debug fiber --uid UID | --name FIBER_NAME
+dsh-cordis-debug watch [--event EVENT_NAME] [--timeout MS]
+dsh-cordis-debug checkpoint [--output FILE]
+dsh-cordis-debug compare --baseline FILE
+dsh-cordis-debug profile --ttl MS
+```
+
+`snapshot`, `watch`, and `profile` create a transient debug session and always attempt to detach it. `checkpoint --output` is the only CLI command that writes a file; `compare` reads a caller-owned JSON checkpoint. `profile` starts a finite lease and immediately performs exact-lease cleanup in the same one-shot invocation; it does not accept a reproduction callback or execute arbitrary runtime actions.
+
+### User Skill
+
+The installable [skills/dsh-runtime-debugging/SKILL.md](skills/dsh-runtime-debugging/SKILL.md) teaches an MCP-capable coding Agent how to use target/session discovery, bounded snapshots, focused evidence, checkpoints, waits, and approved profiling. It is observational and verification-oriented. It does not authorize arbitrary dispatch, reload, breakpoints, evaluation, generic runtime mutation, or payload capture. Agents should preserve target/session/lease ids, recover from `gap` with a fresh snapshot, and detach sessions when finished.
 
 ## Refresh and retention semantics
 
@@ -276,6 +368,8 @@ src/
 │  │  └─ diff.ts                           # semantic multiplicity-preserving comparison
 │  ├─ cordis-inspect.ts                    # DSH CordisRuntime Provider adapter
 │  ├─ dsh-experiments.ts                   # DSH approval-gated start/stop tools
+│  ├─ agent-debug/                         # target/session/snapshot/wait Agent core
+│  ├─ runtime-notifications.ts             # bounded metadata-only notification source
 │  ├─ mcp-experiment-control.ts            # thin MCP → shared coordinator adapter
 │  ├─ mcp.ts                               # embedded loopback MCP adapter + auth/capability
 │  ├─ service.ts                           # observer/profiler/coordinator composition
@@ -286,6 +380,7 @@ src/
 │     ├─ waterfall-controller.ts           # low-level explicit waterfall seam
 │     └─ waterfall-experiment-coordinator.ts # single owner + finite Agent leases
 ├─ shared/
+│  ├─ agent-debug.ts                       # v0.7 target/session/snapshot/wait contracts
 │  ├─ diagnostics.ts                       # machine-facing diagnostics contracts
 │  ├─ experiments.ts                       # transport-neutral experiment contract
 │  ├─ verification.ts                      # checkpoint/diff contracts
@@ -301,7 +396,12 @@ src/
 │     ├─ TimelineView.tsx
 │     ├─ FibersView.tsx
 │     └─ ProfilerView.tsx
+├─ cli.ts / cli-entry.ts                   # MCP-backed JSON CLI connection entry
+├─ cli/program.ts                           # CLI command parser and tool workflows
 └─ index.ts                                # DSH / Cordis Host plugin entry
+
+skills/
+└─ dsh-runtime-debugging/SKILL.md          # installable end-user Agent workflow
 ```
 
 ## Milestones
@@ -339,7 +439,16 @@ Caller-owned checkpoints, semantic multiplicity-preserving diff, DSH/MCP parity,
 
 Detailed v0.6 evidence is in [the v0.6 roadmap](docs/v0.6-roadmap.md).
 
-Automatic reload/orchestration, arbitrary event execution, generic listener/service/config mutation, persistent approvals, lease renewal, concurrent leases, remote/LAN MCP, raw payload capture, `diagnose()` verdicts, and non-waterfall instrumentation remain outside v0.6.
+### v0.7 — DSH DevTools for Agents ✓ repository-ready
+
+- MCP remains the primary Agent integration and keeps the seven focused read-only tools;
+- target discovery, target epochs, bounded attach/detach sessions, idle expiry, and stale-target lifecycle facts;
+- metadata-only cold-start snapshots with bounded cursor-paged catalogs and mechanical evidence candidates;
+- bounded sequence-aware runtime waits with exact filters and explicit `found` / `timeout` / `gap` outcomes;
+- a loopback/token-authenticated `dsh-cordis-debug` JSON CLI and installable runtime-debugging Skill;
+- session-owned experiment cleanup while preserving the v0.6 approval, capability, exact-lease, TTL, and Human emergency-stop rules.
+
+Automatic reload/orchestration, arbitrary event execution, generic listener/service/config mutation, persistent approvals, lease renewal, concurrent leases, remote/LAN MCP, raw payload capture, `diagnose()` verdicts, breakpoints, pause/step, expression evaluation, and non-waterfall instrumentation remain outside v0.7. A raw WebSocket/CDP-compatible wire endpoint is also deferred; MCP, CLI, and Skill are the supported Agent routes.
 
 ## Install into a DSH Web profile
 
@@ -349,7 +458,7 @@ pnpm build
 dsh plugin --profile web add ./
 ```
 
-Open **Cordis DevTools** from the DSH Web sidebar footer. Diagnostics/control RPC uses loopback authority. DSH read access uses Cordis Inspect; DSH experiment start uses the normal approval service; external access requires explicitly enabling MCP as described above.
+Open **Cordis DevTools** from the DSH Web sidebar footer. Diagnostics/control RPC uses loopback authority. DSH read access uses Cordis Inspect; DSH experiment start uses the normal approval service; external Agent access uses the MCP endpoint and token configuration above. The CLI and Skill consume that same MCP surface.
 
 ## Development
 
@@ -363,13 +472,13 @@ pnpm verify:client-bundle
 pnpm test:e2e:web
 ```
 
-CI runs two real DSH Web smokes in Chromium: the v0.5 Runtime Verification regression and the v0.6 Controlled Runtime Experiments proof. The latter uses a real shipped `SessionStore` session and real ToolRuntime/ApprovalService path, then an official external MCP Client and Human Profiler in the same disposable DSH composition. No model or API key is required.
+CI runs the unit/contract coverage for Agent Debug target/session lifecycle, snapshot projection, bounded notifications and waits, MCP tools, CLI workflows, and the existing real DSH Web smokes. The v0.6 smoke uses a real shipped `SessionStore` session and real ToolRuntime/ApprovalService path, then an official external MCP Client and Human Profiler in the same disposable DSH composition. No model or API key is required.
 
 E2E fixtures are not part of published package files or production plugin runtime. The waterfall overhead harness remains regression evidence rather than a fixed hosted-runner percentage budget.
 
 ## Agent-native workflow
 
-Standing orders live in [AGENTS.md](AGENTS.md); durable decisions and rejected alternatives live in [.agents/notes/](.agents/notes/README.md); [development-loop](.agents/skills/development-loop/SKILL.md) defines the default development SOP; and the responsibility split is documented in [the development workflow](docs/development-workflow.md).
+For end-user runtime debugging, start with [skills/dsh-runtime-debugging/SKILL.md](skills/dsh-runtime-debugging/SKILL.md). Standing orders live in [AGENTS.md](AGENTS.md); durable decisions and rejected alternatives live in [.agents/notes/](.agents/notes/README.md); [development-loop](.agents/skills/development-loop/SKILL.md) defines the default development SOP; and the responsibility split is documented in [the development workflow](docs/development-workflow.md).
 
 ## Important semantics
 
@@ -378,17 +487,21 @@ Standing orders live in [AGENTS.md](AGENTS.md); durable decisions and rejected a
 - `DevtoolsSnapshot.fibers` and Effects are live inventory; historical dispatch Fiber references can outlive the Fiber.
 - Empty Agent dispatch results mean “not observed in the retained bounded window,” not “never happened.”
 - `truncated: true` means a query limit omitted retained matches; `bounded: true` separately means older runtime history may already have been overwritten.
+- Target ids are opaque and target epochs identify runtime incarnations; a stale or disposed session must not be reused after reload/disposal.
+- Agent Debug catalogs and observation journals are bounded; a `gap` result means the requested sequence fell out of the retained journal and requires a fresh snapshot.
+- Snapshot candidates are mechanical evidence groups only; duplicate Fibers, equivalent registrations, orphaned owners, trace anomalies, and conflicts are not root-cause diagnoses.
 - Runtime Verification checkpoints contain authoritative current topology, not bounded dispatch/profiler history.
 - Checkpoints are caller-owned serializable values; the Host does not persist checkpoint ids/history.
 - Runtime-local listener ids, listener order, Fiber/owner uids, timestamps, and checkpoint digests are evidence/integrity fields, not automatic cross-checkpoint object identity.
 - Semantic comparison reports mechanical topology facts and multiplicities; it does not claim root cause or success.
 - Read-only diagnostics, verification, and experiment status never enable instrumentation.
-- Agent experiment start is a mutation and therefore goes through the v0.6 authority boundary: DSH one-shot approval or explicitly authenticated MCP capability.
+- Agent experiment start is a mutation and therefore goes through the v0.6 authority boundary: DSH one-shot approval or explicitly authenticated MCP capability. A v0.7 debug session may own the lease and receives exact-session cleanup.
 - An Agent lease is finite; a stale `leaseId` cannot stop another owner, while Human emergency stop can always reduce instrumentation.
 - `experimentId` identifies trace attribution, not completeness; profiler retention remains bounded.
 - Instrumented mode targets the validated Cordis 4.0.1 compatibility behavior and fails closed when its seam is unavailable or no longer owned.
 - Raw event arguments, return values, error details, prompts, tool results, plugin config, file contents, credentials, bearer tokens, and raw effect functions/disposers are not collected by current contracts.
 - Loopback-only MCP is not a confidentiality boundary against untrusted local software; external mutation therefore requires authentication even on `127.0.0.1`.
+- The supported Agent routes are MCP, the JSON CLI, and the installable Skill. Raw WebSocket/CDP wire compatibility, breakpoints, pause/step, evaluation, reload, arbitrary dispatch, and generic runtime mutation are not part of the current contract.
 
 ## License
 

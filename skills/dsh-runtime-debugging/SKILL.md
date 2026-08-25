@@ -1,0 +1,75 @@
+---
+name: dsh-runtime-debugging
+description: Debug a running DeepSeek Harness / Cordis runtime through its DSH DevTools MCP tools, using bounded runtime evidence, checkpoints, waits, and approved profiling; do not use for generic source-only debugging.
+---
+
+# DSH runtime debugging
+
+Use this skill when an Agent needs to inspect or verify a live DSH/Cordis runtime. Treat the runtime as an evidence source that complements source reading, tests, and logs. Preserve the returned `targetId`, `targetEpoch`, `debugSessionId`, and any `leaseId` for the entire workflow.
+
+## Tool availability and safety
+
+The planned Agent workflow uses these tools exactly:
+
+- `cordis_list_debug_targets`
+- `cordis_attach_debug_session`
+- `cordis_debug_snapshot`
+- `cordis_wait_for_runtime_change`
+- `cordis_detach_debug_session`
+
+Focused evidence tools are:
+
+- `cordis_runtime_summary`
+- `cordis_inspect_event`
+- `cordis_inspect_fiber`
+- `cordis_search_dispatches`
+- `cordis_profiler_traces`
+- `cordis_capture_checkpoint`
+- `cordis_compare_current`
+- `cordis_waterfall_experiment_status`
+- `cordis_start_waterfall_experiment`
+- `cordis_stop_waterfall_experiment`
+
+Tool availability may vary by deployed project version. If a requisite MCP tool is absent, report that limitation and stop or ask the user; do not invent an alternative tool name or silently substitute a different operation.
+
+This skill is observational and verification-oriented. It does not authorize arbitrary dispatch, runtime mutation, reload, breakpoint/evaluation, or payload capture. Do not bypass DSH one-shot approval, the MCP bearer token, or the configured experiment capability. Start profiling only after the user authorizes it and the applicable approval/capability check succeeds. Always detach with `cordis_detach_debug_session` when finished, even after a failed or partial workflow. Stop an experiment with its exact returned `leaseId`; retain the id so stale-stop behavior and cleanup remain verifiable.
+
+Never claim an automatic root cause, `fixed` result, confidence score, or successful remediation from these tools. Candidates and comparisons are mechanical facts. Do not treat a bounded absence as proof that something never happened.
+
+## Cold-start workflow
+
+1. Call `cordis_list_debug_targets` and select the active `cordis-runtime` target. Record its `targetId`, `targetEpoch`, status, and capabilities.
+2. Call `cordis_attach_debug_session` with that target. Record the opaque `debugSessionId` and the session's target epoch.
+3. Call `cordis_debug_snapshot` with the session and the sections needed for exploration, normally `summary`, `events`, `fibers`, `dispatches`, `profiler`, and `candidates`. Use the returned bounded catalog facts, names, multiplicities, and owner relationships to choose focused queries.
+4. Use the focused evidence tools with exact event names, Fiber uids/names, and bounded limits. Keep the session id on every new session-aware request.
+5. Finish with `cordis_detach_debug_session` and report any stale, gap, truncated, or bounded facts alongside the evidence.
+
+## Evidence workflows
+
+### Duplicate Fibers or listeners
+
+Start with `cordis_debug_snapshot` sections `fibers`, `events`, and `candidates`. For a candidate, confirm current authoritative state with `cordis_inspect_fiber` and `cordis_inspect_event`. Compare semantic owner/name/registration facts and multiplicities; runtime-local ids and uids can change between captures. Report “multiple live Fibers” or “equivalent registrations observed” only as evidence, not as a cause.
+
+### Lifecycle leak before/after
+
+Call `cordis_capture_checkpoint` before the user's normal edit, reload, or reproduction step and retain the complete checkpoint value. After that user-directed action, call `cordis_compare_current` with the baseline. Describe semantic Event/Listener/Fiber multiplicity and ownership changes, including `2 -> 1` or `1 -> 2` where supplied. A clean diff is evidence of no reported topology change in the compared scope; it is not an automatic fixed claim.
+
+### Bounded waits and missing observations
+
+Use `cordis_wait_for_runtime_change` with an explicit `debugSessionId`, bounded timeout, exact observation type/event filter when useful, and `afterSequence` from the session or previous result. A timeout or empty retained search means “not observed in the bounded window,” never “never happened.”
+
+Inspect the returned journal window. If `gap` is true or `afterSequence` is older than the retained window, recover by calling `cordis_debug_snapshot` and focused evidence queries to establish a fresh state, then resume waiting from the newest returned sequence. Do not infer an event that was dropped or expired.
+
+### Waterfall profiling
+
+Before mutation, call `cordis_waterfall_experiment_status` and check ownership/capability facts. Explain the finite profiling purpose and obtain the user's authorization. Call `cordis_start_waterfall_experiment` with a bounded TTL; save the exact returned `leaseId` (and experiment id if distinct). Reproduce only the requested behavior, then call `cordis_profiler_traces` filtered to that experiment. Repeated or late `next()` calls are observed trace behavior to report with event/listener/timing metadata; they are not by themselves a root cause.
+
+Call `cordis_stop_waterfall_experiment` with the exact lease id as soon as the finite observation is complete, then re-check `cordis_waterfall_experiment_status`. If the process or session disappears, rely on the coordinator's exact-owner/TTL cleanup and report whether cleanup was observed; never use a stale lease id to stop a later owner. Human ownership or a busy/unsupported/conflict result is a factual stop condition.
+
+## Stale targets and sessions
+
+If a target reload or disposal changes its `targetEpoch`, or a tool reports a stale/expired/detached session, stop using that session and retain its ids for the report. Call `cordis_list_debug_targets` again, select the new active target, attach a new session, and take a fresh `cordis_debug_snapshot`; do not silently reuse an old checkpoint, cursor, sequence, or lease as if it belonged to the new target. If detachment or host disposal cancels a wait, report that lifecycle fact and clean up any still-owned exact lease when possible.
+
+## Handoff
+
+Summarize the target/session identity, time and bounded windows, exact queries, raw mechanical facts, gaps/truncation, and any profiler lease/cleanup outcome. Keep source-level diagnosis and remediation decisions separate from runtime evidence. Detach the debug session before handing control back to the user.
