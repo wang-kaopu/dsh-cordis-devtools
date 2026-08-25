@@ -1,9 +1,11 @@
 # Parallel development plan
 
-The v0.5 Runtime Verification parallel plan is complete. Current planning is v0.6 Controlled Runtime Experiments.
+The v0.5 Runtime Verification and v0.6 Controlled Runtime Experiments parallel plans are complete. The current v0.7 Agent Debug implementation decision and dependency graph live in the DSH DevTools for Agents Agent Note.
 
-- Current dependency graph and branch ownership: [v0.6 parallel development plan](v0.6-parallel-work.md)
-- Current milestone roadmap: [v0.6 Controlled Runtime Experiments roadmap](v0.6-roadmap.md)
+- Current dependency graph and implementation decision: [DSH DevTools for Agents Agent Note](../.agents/notes/implemented/architecture/2026-08-25-dsh-devtools-for-agents.md)
+- Current milestone overview: [repository roadmap](roadmap.md)
+- Previous dependency graph and branch ownership: [v0.6 parallel development plan](v0.6-parallel-work.md)
+- Previous milestone roadmap: [v0.6 Controlled Runtime Experiments roadmap](v0.6-roadmap.md)
 - Product/authority design: [v0.6 Controlled Runtime Experiments](v0.6-controlled-runtime-experiments.md)
 - Completed v0.5 parallel record: [v0.5 parallel development plan](v0.5-parallel-work.md)
 - Historical v0.3 parallel record: [archived parallel-work record](archive/v0.3/parallel-work.md)

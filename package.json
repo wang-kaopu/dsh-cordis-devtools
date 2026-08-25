@@ -1,10 +1,13 @@
 {
   "name": "dsh-cordis-devtools",
-  "version": "0.6.0",
-  "description": "Runtime diagnostics, verification, and controlled waterfall experiments for DeepSeek Harness / Cordis.",
+  "version": "0.7.0",
+  "description": "MCP-first Agent runtime debugging, verification, and controlled profiling for DeepSeek Harness / Cordis.",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "bin": {
+    "dsh-cordis-debug": "lib/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",
@@ -17,7 +20,8 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "skills"
   ],
   "scripts": {
     "build": "tsdown",

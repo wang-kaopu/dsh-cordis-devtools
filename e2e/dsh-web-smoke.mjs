@@ -103,7 +103,91 @@ try {
     'cordis_profiler_traces',
     'cordis_capture_checkpoint',
     'cordis_compare_current',
+    'cordis_list_debug_targets',
+    'cordis_attach_debug_session',
+    'cordis_debug_snapshot',
+    'cordis_wait_for_runtime_change',
+    'cordis_detach_debug_session',
   ])
+
+  const targetsResult = await mcpClient.callTool({
+    name: 'cordis_list_debug_targets',
+    arguments: {},
+  })
+  assert.notEqual(targetsResult.isError, true)
+  const target = targetsResult.structuredContent?.targets?.find(candidate => (
+    candidate.type === 'cordis-runtime' && candidate.status === 'active'
+  ))
+  assert.ok(target, 'missing active cordis-runtime Agent Debug target')
+  assert.equal(typeof target.targetId, 'string')
+  assert.equal(typeof target.targetEpoch, 'number')
+  assert.equal(typeof target.metadata?.title, 'string')
+  assert.ok(Array.isArray(target.capabilities))
+
+  const attachResult = await mcpClient.callTool({
+    name: 'cordis_attach_debug_session',
+    arguments: { targetId: target.targetId },
+  })
+  assert.notEqual(attachResult.isError, true)
+  const debugSession = attachResult.structuredContent
+  assert.equal(typeof debugSession?.debugSessionId, 'string')
+  assert.equal(debugSession?.targetId, target.targetId)
+  assert.equal(debugSession?.status, 'active')
+
+  const debugSnapshotResult = await mcpClient.callTool({
+    name: 'cordis_debug_snapshot',
+    arguments: {
+      debugSessionId: debugSession.debugSessionId,
+      sections: ['summary', 'events', 'fibers', 'dispatches', 'profiler', 'candidates'],
+      catalogs: {
+        events: { limit: 5 },
+        fibers: { limit: 5 },
+        dispatches: { limit: 5 },
+        candidates: { limit: 5 },
+      },
+    },
+  })
+  assert.notEqual(debugSnapshotResult.isError, true)
+  const debugSnapshot = debugSnapshotResult.structuredContent
+  assert.equal(debugSnapshot?.target?.targetId, target.targetId)
+  assert.equal(debugSnapshot?.session?.debugSessionId, debugSession.debugSessionId)
+  assert.equal(debugSnapshot?.session?.status, 'active')
+  assert.equal(debugSnapshot?.summary?.events > 0, true)
+  assert.equal(debugSnapshot?.summary?.liveFibers > 0, true)
+  for (const section of ['events', 'fibers', 'dispatches', 'candidates']) {
+    assert.equal(debugSnapshot?.[section]?.window?.bounded, true, `${section} catalog is not bounded`)
+    assert.ok(debugSnapshot?.[section]?.window?.limit <= 5, `${section} catalog exceeded requested bound`)
+    assert.ok(Array.isArray(debugSnapshot?.[section]?.items), `${section} catalog has no items array`)
+  }
+
+  const debugWaitResult = await mcpClient.callTool({
+    name: 'cordis_wait_for_runtime_change',
+    arguments: {
+      debugSessionId: debugSession.debugSessionId,
+      afterSequence: debugSnapshot.session.observationSequence,
+      type: 'dispatch-observed',
+      event: DUPLICATE_EVENT,
+      timeoutMs: 5_000,
+    },
+  })
+  assert.notEqual(debugWaitResult.isError, true)
+  const debugWait = debugWaitResult.structuredContent
+  assert.equal(debugWait?.outcome, 'found')
+  assert.equal(debugWait?.observation?.type, 'dispatch-observed')
+  assert.equal(debugWait?.observation?.event, DUPLICATE_EVENT)
+  assert.equal(typeof debugWait?.observation?.sequence, 'number')
+  assert.equal(typeof debugWait?.observation?.dispatchId, 'number')
+  assert.equal(typeof debugWait?.observation?.registeredListeners, 'number')
+  assert.equal(debugWait?.session?.debugSessionId, debugSession.debugSessionId)
+
+  const detachedDebugSession = await mcpClient.callTool({
+    name: 'cordis_detach_debug_session',
+    arguments: { debugSessionId: debugSession.debugSessionId },
+  })
+  assert.notEqual(detachedDebugSession.isError, true)
+  assert.equal(detachedDebugSession.structuredContent?.debugSessionId, debugSession.debugSessionId)
+  assert.equal(detachedDebugSession.structuredContent?.status, 'detached')
+
   const mcpSummary = await mcpClient.callTool({ name: 'cordis_runtime_summary', arguments: {} })
   assert.equal(mcpSummary.isError, undefined)
   assert.equal(mcpSummary.structuredContent?.dispatchWindow?.bounded, true)

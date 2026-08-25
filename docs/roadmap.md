@@ -1,6 +1,16 @@
 # Roadmap
 
-The repository version is currently `0.6.0`; the v0.6 Controlled Runtime Experiments milestone is complete at repository level.
+The repository version is currently `0.7.0`; the v0.7 DSH DevTools for Agents feature line is repository-ready.
+
+## Current feature line — v0.7 DSH DevTools for Agents
+
+- Product and usage: [Agent Runtime Diagnostics guide](agent-runtime-diagnostics.md)
+- Runtime architecture: [DSH DevTools for Agents architecture](architecture.md)
+- Architecture decision: [DSH DevTools for Agents Agent Note](../.agents/notes/implemented/architecture/2026-08-25-dsh-devtools-for-agents.md)
+
+v0.7 adds the MCP-first target/session/snapshot/wait workflow, the `dsh-cordis-debug` CLI, and the packaged `dsh-runtime-debugging` Skill over one Host-owned Agent Debug Core. The existing focused diagnostics, Runtime Verification, and authority-gated waterfall experiment remain part of the product.
+
+Raw CDP-compatible WebSocket transport, automatic reload/orchestration, breakpoints, pause/step, expression evaluation, arbitrary mutation, and payload capture remain outside this feature line.
 
 ## Completed milestone — v0.6 Controlled Runtime Experiments
 
