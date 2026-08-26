@@ -14,13 +14,13 @@ Coding Agent 可以读取插件源码，但通常无法直接看到源码在 DSH
 
 DSH DevTools 把这些运行时信息开放给 Agent。Agent 可以在修改前检查现场，在复现过程中等待目标行为出现，并在 reload 后比较前后的运行时状态。
 
-| 调试问题                            | DevTools 提供的信息                                      |
-| ----------------------------------- | -------------------------------------------------------- |
-| reload 后运行时发生了什么变化？     | checkpoint + 语义化拓扑比较                              |
-| 为什么某个 Event 看起来执行了两次？ | 实时 listener 注册、数量和所属 Fiber                     |
-| 旧的插件实例还在运行吗？            | 当前 live Fiber 拓扑                                     |
-| 复现过程中目标行为出现了吗？        | 最近的 dispatch 记录和过滤后的 runtime wait              |
-| waterfall 调用链里发生了什么？      | profiler trace，包括 listener span、耗时和 `next()` 记录 |
+| 调试问题 | DevTools 提供的信息 |
+| --- | --- |
+| reload 后运行时发生了什么变化？ | checkpoint + 语义化拓扑比较 |
+| 为什么某个 Event 看起来执行了两次？ | 实时 listener 注册、数量和所属 Fiber |
+| 旧的插件实例还在运行吗？ | 当前 live Fiber 拓扑 |
+| 复现过程中目标行为出现了吗？ | 最近的 dispatch 记录和过滤后的 runtime wait |
+| waterfall 调用链里发生了什么？ | profiler trace，包括 listener span、耗时和 `next()` 记录 |
 
 典型的 Agent 调试流程：
 
@@ -44,37 +44,41 @@ DSH DevTools 把这些运行时信息开放给 Agent。Agent 可以在修改前�
 
 ### 1. 将 DevTools 加入 DSH Web profile
 
-在本仓库或已经构建好的本地 package checkout 中执行：
+直接从 GitHub 安装 `v0.8.0`：
 
 ```bash
-pnpm install
-pnpm build
-dsh plugin --profile web add ./
+dsh plugin --profile web add github:wang-kaopu/dsh-cordis-devtools#v0.8.0
 ```
 
 之后可以从 DSH Web 侧栏底部打开 **Cordis DevTools**，直接查看当前运行时。
 
-### 2. 连接 Codex 或其他 MCP Host
-
-配置目标 DSH profile，并注册 package-local stdio bridge：
+如果要参与仓库开发，可以使用本地源码：
 
 ```bash
-dsh-cordis-debug setup --profile web --agent codex
+pnpm install --frozen-lockfile
+pnpm build
+dsh plugin --profile web add ./
+```
+
+### 2. 连接 Codex 或其他 MCP Host
+
+配置目标 DSH profile，并注册 profile 内安装的 stdio bridge：
+
+```bash
+dsh plugin --profile web exec dsh-cordis-debug setup --profile web --agent codex
 ```
 
 按照原有开发流程 reload DSH，然后检查连接：
 
 ```bash
-dsh-cordis-debug doctor --profile web
+dsh plugin --profile web exec dsh-cordis-debug doctor --profile web
 ```
 
-`setup` 会为当前 profile 创建仅 owner 可读的 token 文件，启用本地 loopback MCP endpoint，并向 Codex 注册 `dsh-cordis-devtools-mcp`。
+`setup` 会为当前 profile 创建仅 owner 可读的 token 文件，启用本地 loopback MCP endpoint，并向 Codex 注册 DevTools bridge。
 
 stdio bridge 在本地读取 credential，并把 MCP 请求转发给正在运行的 DSH 进程。token 不需要进入 prompt、tool arguments、日志或诊断结果。
 
 其他支持 MCP 的 Host 可以使用 `setup` 输出的 bridge command，或者参考 [MCP connection guide](docs/agent-runtime-diagnostics.md#connecting-an-mcp-capable-agent)。
-
-> 当前支持 package-local binary。本地 checkout 可以直接使用；npm package、Git tag 和 GitHub Release 需要单独发布。
 
 ### 3. 让 Agent 检查、修改并验证
 
@@ -108,12 +112,12 @@ detach session
 
 ### Agent tools
 
-| 用途                 | Tools                                                                                                                                                |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session 生命周期     | `cordis_list_debug_targets`, `cordis_attach_debug_session`, `cordis_debug_snapshot`, `cordis_wait_for_runtime_change`, `cordis_detach_debug_session` |
-| 定点运行时查询       | `cordis_runtime_summary`, `cordis_inspect_event`, `cordis_inspect_fiber`, `cordis_search_dispatches`, `cordis_profiler_traces`                       |
-| Runtime verification | `cordis_capture_checkpoint`, `cordis_compare_current`                                                                                                |
-| Waterfall experiment | `cordis_waterfall_experiment_status`, `cordis_start_waterfall_experiment`, `cordis_stop_waterfall_experiment`                                        |
+| 用途 | Tools |
+| --- | --- |
+| Session 生命周期 | `cordis_list_debug_targets`, `cordis_attach_debug_session`, `cordis_debug_snapshot`, `cordis_wait_for_runtime_change`, `cordis_detach_debug_session` |
+| 定点运行时查询 | `cordis_runtime_summary`, `cordis_inspect_event`, `cordis_inspect_fiber`, `cordis_search_dispatches`, `cordis_profiler_traces` |
+| Runtime verification | `cordis_capture_checkpoint`, `cordis_compare_current` |
+| Waterfall experiment | `cordis_waterfall_experiment_status`, `cordis_start_waterfall_experiment`, `cordis_stop_waterfall_experiment` |
 
 Session、snapshot、wait、focused diagnostics 和 verification 都属于只读路径。
 
@@ -135,10 +139,10 @@ Human UI 和 Agent 接口使用同一套 Host runtime state。
 同一套调试能力也可以通过 `dsh-cordis-debug` CLI 使用：
 
 ```bash
-dsh-cordis-debug targets
-dsh-cordis-debug snapshot
-dsh-cordis-debug checkpoint --output checkpoint.json
-dsh-cordis-debug compare --baseline checkpoint.json
+dsh plugin --profile web exec dsh-cordis-debug targets
+dsh plugin --profile web exec dsh-cordis-debug snapshot
+dsh plugin --profile web exec dsh-cordis-debug checkpoint --output checkpoint.json
+dsh plugin --profile web exec dsh-cordis-debug compare --baseline checkpoint.json
 ```
 
 完整命令见 [CLI reference](docs/agent-runtime-diagnostics.md#json-cli)。
@@ -280,7 +284,7 @@ Profiler 记录 Event、listener、ownership、timing、outcome 和 `next()` 等
 ## Development
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm verify:policy
 pnpm typecheck
 pnpm test
