@@ -184,7 +184,7 @@ async function setupProfile(profile: ProfilePaths, options: BootstrapCliOptions)
   try {
     await (options.spawnCodex ?? spawnCodex)(
       'codex',
-      ['mcp', 'add', PLUGIN_ID, '--', 'dsh-cordis-devtools-mcp', '--endpoint', `http://127.0.0.1:${MCP_PORT}/mcp`, '--token-file', profile.tokenPath],
+      ['mcp', 'add', PLUGIN_ID, '--', 'dsh', 'plugin', '--profile', profile.name, 'exec', 'dsh-cordis-devtools-mcp', '--endpoint', `http://127.0.0.1:${MCP_PORT}/mcp`, '--token-file', profile.tokenPath],
     )
   } catch { throw new BootstrapCliError('Codex MCP registration failed') }
   return { command: 'setup', profile: profile.name, tokenFile: profile.tokenPath, endpoint: `http://127.0.0.1:${MCP_PORT}/mcp`, reloadRequired: true }
