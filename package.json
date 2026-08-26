@@ -1,12 +1,13 @@
 {
   "name": "dsh-cordis-devtools",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "MCP-first Agent runtime debugging, verification, and controlled profiling for DeepSeek Harness / Cordis.",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "bin": {
-    "dsh-cordis-debug": "lib/cli.js"
+    "dsh-cordis-debug": "lib/cli.js",
+    "dsh-cordis-devtools-mcp": "lib/bridge-entry.js"
   },
   "exports": {
     ".": {
@@ -73,7 +74,8 @@
     "url": "https://github.com/wang-kaopu/dsh-cordis-devtools/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "yaml": "^2.8.2"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

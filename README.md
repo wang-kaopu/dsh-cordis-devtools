@@ -2,7 +2,7 @@
 
 Agent-oriented runtime inspection and debugging for DeepSeek Harness / Cordis. The product surface is MCP plus a small JSON CLI and an installable debugging Skill; the Host remains the source of truth for live Events, listeners, Fibers, dispatch history, verification checkpoints, and controlled waterfall profiling.
 
-> Current feature line: **v0.7 — DSH DevTools for Agents**. v0.7 adds target discovery, bounded debug sessions, metadata-only runtime snapshots, resumable bounded waits with explicit gap results, mechanical candidate evidence, a CLI, and the [DSH runtime-debugging Skill](skills/dsh-runtime-debugging/SKILL.md). Diagnostics and Runtime Verification remain read-only; waterfall profiling remains a separate finite, authority-gated experiment.
+> Current feature line: **v0.8 — Local Agent Bridge & Bootstrap**. v0.8 adds the package-local stdio bridge, profile-scoped `setup` / `doctor` / `rotate-token`, owner-only `mcp.tokenFile` storage, and Codex registration over the v0.7 Agent Debug workflow. Diagnostics and Runtime Verification remain read-only; waterfall profiling remains a separate finite, authority-gated experiment.
 >
 > Repository readiness does **not** imply that an npm package, Git tag, or GitHub Release has been published.
 
@@ -31,6 +31,7 @@ Agent-oriented runtime inspection and debugging for DeepSeek Harness / Cordis. T
 - Finite Agent leases with exact ownership, TTL cleanup, stale-stop protection, Human emergency stop, and experiment-tagged traces.
 - DSH start/stop experiment tools where start requires one-shot `ctx.approval` and stop performs exact-lease cleanup without a second approval.
 - Optional authenticated MCP experiment capability; mutation tools are omitted by default and require an explicit non-empty bearer token.
+- Package-local `dsh-cordis-devtools-mcp` stdio bridge, profile-scoped bootstrap/doctor/token rotation, and owner-only `mcp.tokenFile` handling; the bridge keeps credentials outside Agent context and forwards the existing MCP surface without auto-replaying calls.
 - Real DSH E2E proving DSH approval, authenticated MCP, exact `experimentId` trace retrieval, stale-stop safety, TTL cleanup, Human emergency stop, and ordinary Human profiling in the same shipped composition.
 - Loopback-only Host → browser diagnostics/control through DSH Connection RPC.
 - DSH-native control chrome through `@deepseek-ai/dsh-client-ui-primitives`.
@@ -121,9 +122,9 @@ Direct listener-registry / live-Fiber implementation access remains isolated beh
 
 `AgentDebugService` is transport-neutral. MCP and the CLI call the same target/session/snapshot/wait semantics; focused diagnostics, checkpoints, and the shared experiment coordinator remain the same Host-owned facts. This is intentionally an Agent product layer, not a general-purpose DSH control plane.
 
-There is no raw CDP-compatible WebSocket endpoint in v0.7. A CDP-like wire protocol is deferred until a concrete IDE or dedicated debugger needs it; current Agent access is through MCP, the CLI, and the Skill workflow.
+There is no raw CDP-compatible WebSocket endpoint in v0.8. A CDP-like wire protocol is deferred until a concrete IDE or dedicated debugger needs it; current Agent access is through the local stdio bridge, manual HTTP MCP, the CLI, and the Skill workflow.
 
-See [the architecture document](docs/architecture.md), [Agent Runtime Diagnostics guide](docs/agent-runtime-diagnostics.md), [v0.5 Runtime Verification design](docs/v0.5-runtime-verification.md), [v0.6 Controlled Runtime Experiments](docs/v0.6-controlled-runtime-experiments.md), and the [v0.7 Agent Debug decision](.agents/notes/implemented/architecture/2026-08-25-dsh-devtools-for-agents.md) for detailed invariants.
+See [the v0.8 architecture document](docs/architecture.md), [Agent Runtime Diagnostics guide](docs/agent-runtime-diagnostics.md), [v0.5 Runtime Verification design](docs/v0.5-runtime-verification.md), [v0.6 Controlled Runtime Experiments](docs/v0.6-controlled-runtime-experiments.md), the [v0.8 Agent Bridge decision](.agents/notes/implemented/architecture/2026-08-26-agent-bridge-bootstrap.md), and the historical [v0.7 Agent Debug decision](.agents/notes/implemented/architecture/2026-08-25-dsh-devtools-for-agents.md) for detailed invariants.
 
 ## Web Cordis DevTools
 
@@ -309,6 +310,45 @@ When a debug session owns the experiment, include its exact `debugSessionId` in 
 
 A listener bind failure is contained to the optional MCP adapter by default; `failOnStartupError: true` makes MCP availability required for plugin activation.
 
+### Local Agent bridge
+
+For Agent hosts that support stdio MCP servers, use the package-local
+`dsh-cordis-devtools-mcp` bin. An explicitly authorized setup prepares one DSH
+profile's MCP patch and owner-only token file; it does not restart DSH or print
+the token:
+
+```bash
+dsh-cordis-debug setup --profile web --agent codex
+```
+
+`setup --agent codex` creates the owner-only token file, updates the selected
+profile, and registers the local bridge with Codex itself. It does not restart
+DSH or print the token. Reload DSH normally after setup:
+
+```text
+codex mcp add dsh-cordis-devtools -- dsh-cordis-devtools-mcp --endpoint http://127.0.0.1:43127/mcp --token-file <profile-token-file>
+```
+
+The command above is the registration shape used by setup; `<profile-token-file>`
+is a local path, not a token value. If setup cannot invoke Codex, run that
+shape manually with the absolute token-file path reported by the local profile.
+
+Use `dsh-cordis-debug doctor --profile web` to verify profile state,
+token-file permissions, endpoint authentication, and tool discovery. The
+bridge keeps the token out of prompts, tool arguments, logs, and diagnostic
+results. This repository's local/package bin is the supported path here; do
+not assume an `npx` release is published.
+
+After `dsh-cordis-debug rotate-token --profile web`, reload DSH through its
+normal user-controlled workflow. An already-running bridge may have an old
+remote connection: if its first tool request fails after that reload, the
+Agent/user may explicitly retry that same request once, which lets the bridge
+reconnect and reread the token file. The bridge never automatically retries or
+replays a tool call; report a second failure instead of issuing more retries.
+
+The manual authenticated HTTP MCP route below remains supported for hosts that
+cannot launch a stdio server.
+
 ### JSON CLI
 
 The package exposes `dsh-cordis-debug`, a one-shot JSON CLI built on the same MCP tools. It requires a loopback MCP endpoint and a bearer token, supplied either as global flags or environment variables:
@@ -339,6 +379,9 @@ dsh-cordis-debug profile --ttl MS
 ### User Skill
 
 The installable [skills/dsh-runtime-debugging/SKILL.md](skills/dsh-runtime-debugging/SKILL.md) teaches an MCP-capable coding Agent how to use target/session discovery, bounded snapshots, focused evidence, checkpoints, waits, and approved profiling. It is observational and verification-oriented. It does not authorize arbitrary dispatch, reload, breakpoints, evaluation, generic runtime mutation, or payload capture. Agents should preserve target/session/lease ids, recover from `gap` with a fresh snapshot, and detach sessions when finished.
+
+The Skill assumes that the Agent host has already configured the stdio bridge
+or the manual loopback MCP endpoint. See [Connecting an MCP-capable Agent](docs/agent-runtime-diagnostics.md#connecting-an-mcp-capable-agent) for Codex registration, token handling, and connection verification.
 
 ## Refresh and retention semantics
 

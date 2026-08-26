@@ -55,7 +55,7 @@ function cssModulePlugin() {
 export default defineConfig([
   {
     name: 'dsh-cordis-devtools',
-    entry: { index: 'src/index.ts', cli: 'src/cli-entry.ts', 'cli-core': 'src/cli.ts' },
+    entry: { index: 'src/index.ts', cli: 'src/cli-entry.ts', 'cli-core': 'src/cli.ts', 'bridge-entry': 'src/bridge-entry.ts' },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

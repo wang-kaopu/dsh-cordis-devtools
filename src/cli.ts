@@ -14,8 +14,9 @@ import {
   type CliRunResult,
   type ToolClient,
 } from './cli/program.js'
+import { BootstrapCliError, isBootstrapCommand, runBootstrapCli, type BootstrapCliOptions } from './bootstrap/profile-bootstrap.js'
 
-const CLIENT_INFO = { name: 'dsh-cordis-debug', version: '0.7.0' } as const
+const CLIENT_INFO = { name: 'dsh-cordis-debug', version: '0.8.0' } as const
 
 /** Connection settings for the loopback DSH DevTools MCP endpoint. */
 export interface CliConnectionConfig {
@@ -73,6 +74,8 @@ export interface CliMainOptions {
   runProgram?: typeof runCliProgram
   /** Process exit-code sink; defaults to `process.exitCode`. */
   setExitCode?: (exitCode: number) => void
+  /** Bootstrap seams used by profile setup, doctor, and token rotation. */
+  bootstrap?: Omit<BootstrapCliOptions, 'env'>
 }
 
 /**
@@ -169,6 +172,19 @@ export async function main(
   const io = options.io ?? nodeIo()
   const files = options.files ?? nodeFiles()
   const setExitCode = options.setExitCode ?? ((exitCode: number) => { process.exitCode = exitCode })
+  if (isBootstrapCommand(argv)) {
+    try {
+      const result = await runBootstrapCli(argv, { ...options.bootstrap, env: options.env ?? process.env })
+      await io.writeStdout(`${JSON.stringify(result.value)}\n`)
+      setExitCode(0)
+      return { exitCode: 0, value: result.value }
+    } catch (error) {
+      const result = connectionFailure(error)
+      await io.writeStderr(`${JSON.stringify({ error: result.error })}\n`)
+      setExitCode(result.exitCode)
+      return result
+    }
+  }
   let config: CliConnectionConfig
   let commandArgs: readonly string[]
   try {
@@ -216,7 +232,7 @@ function validateEndpoint(value: string): string {
 
 function connectionFailure(error: unknown, token?: string, fallbackCode = 'invalid-connection-config'): CliRunResult {
   const message = redact(error instanceof Error ? error.message : String(error), token)
-  const code = error instanceof CliConnectionError ? error.code : fallbackCode
+  const code = error instanceof CliConnectionError || error instanceof BootstrapCliError ? error.code : fallbackCode
   return { exitCode: 1, error: { code, message } }
 }
 

@@ -19,11 +19,15 @@ describe('published package entries', () => {
       bin?: Record<string, string>
       files?: string[]
     }
-    expect(packageJson.bin).toEqual({ 'dsh-cordis-debug': 'lib/cli.js' })
+    expect(packageJson.bin).toMatchObject({ 'dsh-cordis-debug': 'lib/cli.js' })
+    const bridgeEntry = packageJson.bin?.['dsh-cordis-devtools-mcp']
+    expect(bridgeEntry).toMatch(/^lib\/.+\.js$/)
     expect(packageJson.files).toContain('skills')
 
     const cliEntry = await readFile(resolve(process.cwd(), 'lib/cli.js'), 'utf8')
     expect(cliEntry.length).toBeGreaterThan(0)
+    const bridge = await readFile(resolve(process.cwd(), bridgeEntry as string), 'utf8')
+    expect(bridge.length).toBeGreaterThan(0)
     const skill = await readFile(resolve(process.cwd(), 'skills/dsh-runtime-debugging/SKILL.md'), 'utf8')
     expect(skill.length).toBeGreaterThan(0)
   })
