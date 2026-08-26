@@ -5,6 +5,7 @@ import { createMcpExperimentControl } from './host/mcp-experiment-control.js'
 import { DEFAULT_MCP_PORT, installEmbeddedMcpServer } from './host/mcp.js'
 import { installDevtoolsRpc } from './host/rpc.js'
 import { DevtoolsService } from './host/service.js'
+import { readMcpTokenFile } from './bootstrap/token-store.js'
 
 export const name = 'dsh-cordis-devtools'
 export const provide = 'cordisDevtools'
@@ -21,6 +22,8 @@ export interface McpConfig {
   port?: number
   /** Optional bearer token. When configured, every MCP request requires it. */
   token?: string
+  /** Absolute normalized owner-only token file. Takes precedence over token. */
+  tokenFile?: string
   /** Optional controlled waterfall experiment capability. Omit to preserve the v0.5 seven-tool surface. */
   experiments?: McpExperimentConfig
   /** Reject plugin activation if the MCP listener cannot start. Default false. */
@@ -37,6 +40,12 @@ export interface Config {
 }
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
+  const mcpToken = config.mcp?.enabled !== true
+    ? undefined
+    : config.mcp.tokenFile === undefined
+      ? config.mcp.token
+      : await readMcpTokenFile(config.mcp.tokenFile)
+
   const service = new DevtoolsService(ctx, {
     maxDispatches: config.maxDispatches,
     maxTraces: config.maxTraces,
@@ -63,7 +72,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 
     await installEmbeddedMcpServer(ctx, service.diagnostics, {
       port: config.mcp.port ?? DEFAULT_MCP_PORT,
-      token: config.mcp.token,
+      token: mcpToken,
       failOnStartupError: config.mcp.failOnStartupError ?? false,
       agentDebug: {
         listTargets: () => service.agentDebug.listTargets(),

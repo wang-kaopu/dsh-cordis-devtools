@@ -1,16 +1,22 @@
 # Roadmap
 
-The repository version is currently `0.7.0`; the v0.7 DSH DevTools for Agents feature line is repository-ready.
+The repository version is currently `0.8.0`; the v0.8 Local Agent Bridge & Bootstrap feature line is repository-ready.
 
-## Current feature line — v0.7 DSH DevTools for Agents
+## Current feature line — v0.8 Local Agent Bridge & Bootstrap
 
 - Product and usage: [Agent Runtime Diagnostics guide](agent-runtime-diagnostics.md)
 - Runtime architecture: [DSH DevTools for Agents architecture](architecture.md)
-- Architecture decision: [DSH DevTools for Agents Agent Note](../.agents/notes/implemented/architecture/2026-08-25-dsh-devtools-for-agents.md)
+- Architecture decision: [DSH Local Agent Bridge & Bootstrap Note](../.agents/notes/implemented/architecture/2026-08-26-agent-bridge-bootstrap.md)
 
-v0.7 adds the MCP-first target/session/snapshot/wait workflow, the `dsh-cordis-debug` CLI, and the packaged `dsh-runtime-debugging` Skill over one Host-owned Agent Debug Core. The existing focused diagnostics, Runtime Verification, and authority-gated waterfall experiment remain part of the product.
+v0.8 adds the package-local `dsh-cordis-devtools-mcp` stdio bridge, profile-scoped `setup`, secret-free `doctor`, owner-only `mcp.tokenFile`, and `rotate-token` with explicit normal DSH reload. The bridge forwards the v0.7 MCP tools and does not automatically retry or replay calls. v0.7's MCP-first target/session/snapshot/wait workflow, CLI, and packaged Skill remain the Agent Debug foundation.
 
 Raw CDP-compatible WebSocket transport, automatic reload/orchestration, breakpoints, pause/step, expression evaluation, arbitrary mutation, and payload capture remain outside this feature line.
+
+## Completed milestone — v0.7 DSH DevTools for Agents
+
+- Architecture decision: [v0.7 DSH DevTools for Agents Agent Note](../.agents/notes/implemented/architecture/2026-08-25-dsh-devtools-for-agents.md)
+
+v0.7 added the MCP-first target/session/snapshot/wait workflow, the `dsh-cordis-debug` CLI, and the packaged `dsh-runtime-debugging` Skill over one Host-owned Agent Debug Core. Its historical boundary and evidence semantics remain recorded in the v0.7 Agent Note.
 
 ## Completed milestone — v0.6 Controlled Runtime Experiments
 

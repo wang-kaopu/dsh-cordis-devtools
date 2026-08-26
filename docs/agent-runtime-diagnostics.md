@@ -1,4 +1,4 @@
-# DSH DevTools for Agents (v0.7)
+# DSH DevTools for Agents (v0.8)
 
 This is the user guide for debugging a live DeepSeek Harness (DSH) / Cordis
 runtime from an MCP-capable coding Agent. The primary route is MCP; the
@@ -242,6 +242,81 @@ When `token` is configured, every MCP request—including read-only requests—m
 send `Authorization: Bearer <token>`. Loopback is a network exposure boundary,
 not a trust boundary against other local software. The token is never placed
 in tool arguments, logs, traces, checkpoints, or diagnostic output.
+
+## Connecting an MCP-capable Agent
+
+The recommended Agent route is the package's local stdio bridge. It gives the
+Agent host a normal local MCP process and keeps the DSH endpoint, token file,
+and HTTP hop outside the model context. The bridge forwards the existing DSH
+tools; it does not create a second target/session registry or grant additional
+runtime mutation.
+
+Prepare one explicit profile and token store:
+
+```bash
+dsh-cordis-debug setup --profile web --agent codex
+```
+
+With `--agent codex`, setup performs the Codex registration itself using the
+local token-file path; it does not expose the token or restart DSH. Reload DSH
+through the normal user-controlled workflow after setup. The registration
+shape is:
+
+```text
+codex mcp add dsh-cordis-devtools -- dsh-cordis-devtools-mcp --endpoint http://127.0.0.1:43127/mcp --token-file <profile-token-file>
+```
+
+The `dsh-cordis-devtools-mcp` executable is a package-local bin for this
+release path. Do not assume that an `npx` package is already published. When
+the executable is not on `PATH`, invoke the built or locally installed package
+bin explicitly and keep the same stdio registration shape. The
+`<profile-token-file>` placeholder is a path only; never replace it with the
+token contents.
+
+`doctor` checks the profile patch, token-file permissions, DSH reachability,
+authenticated MCP initialization, and tool discovery without printing any
+secret:
+
+```bash
+dsh-cordis-debug doctor --profile web
+```
+
+`rotate-token` only replaces the owner-only token file and profile patch; it
+does not reload DSH. After rotation, reload DSH through the normal
+user-controlled workflow. A bridge process that was already running can hold
+an old remote connection. If its first tool request fails after the reload,
+the Agent or user may explicitly retry that same request once; the bridge then
+reconnects and rereads the token file. The bridge never automatically retries
+or replays a tool call. If that one explicit retry fails, report the failure
+and run `doctor` rather than issuing additional retries.
+
+The installable `dsh-runtime-debugging` Skill specifies the runtime-debugging
+workflow, but it cannot enable the plugin, register the bridge, or provision
+credentials. If the bridge is unavailable, the existing manual HTTP MCP route
+remains supported. Enable the plugin MCP endpoint first, then register its
+Streamable HTTP URL in the Agent host:
+
+```text
+http://127.0.0.1:43127/mcp
+```
+
+When DSH MCP has a configured token, place it in the Agent host's secret or
+environment configuration so its MCP client can send `Authorization: Bearer
+...`. Never put the token in an Agent prompt, Skill input, tool argument,
+source file, log, or checkpoint.
+
+For manual Codex HTTP registration, set `CORDIS_DEVTOOLS_MCP_TOKEN` in the
+environment that launches Codex, then register the Streamable HTTP server once:
+
+```bash
+codex mcp add dsh-cordis-devtools --url http://127.0.0.1:43127/mcp --bearer-token-env-var CORDIS_DEVTOOLS_MCP_TOKEN
+```
+
+Reload the Agent host after changing its MCP configuration. A successful
+connection exposes `cordis_list_debug_targets` plus the remaining DSH DevTools
+tools to the Agent. If those tools are absent, the Agent must report an MCP
+connection/configuration limitation rather than constructing raw HTTP requests
+or asking a user to paste a bearer token into the conversation.
 
 ## JSON CLI
 

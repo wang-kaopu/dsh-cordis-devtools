@@ -7,9 +7,63 @@ description: Debug a running DeepSeek Harness / Cordis runtime through its DSH D
 
 Use this skill when an Agent needs to inspect or verify a live DSH/Cordis runtime. Treat the runtime as an evidence source that complements source reading, tests, and logs. Preserve the returned `targetId`, `targetEpoch`, `debugSessionId`, and any `leaseId` for the entire workflow.
 
+## Connection prerequisite
+
+This Skill teaches an Agent how to use an already-connected MCP surface. The
+recommended connection is the package-local `dsh-cordis-devtools-mcp` stdio
+bridge, which forwards the existing DSH MCP tools over an authenticated
+loopback HTTP hop. It does not create another runtime registry, select a target
+for the Agent, or add runtime mutation.
+
+For an explicitly authorized setup, prepare the selected profile and token
+store and let setup register the local bridge with Codex:
+
+```bash
+dsh-cordis-debug setup --profile web --agent codex
+```
+
+`setup --agent codex` executes the registration command with the local
+token-file path, then returns a secret-free result. It does not restart DSH or
+print the token; reload DSH through its normal workflow before debugging. The
+registration shape is `codex mcp add dsh-cordis-devtools --
+dsh-cordis-devtools-mcp --endpoint http://127.0.0.1:43127/mcp --token-file
+<profile-token-file>`, where the placeholder is a path and must never be
+replaced with token contents. This is a package-local executable path for the
+current release path; do not claim or assume an `npx` package is published. If
+setup or the bridge is not available, retain the manual HTTP MCP route below
+and report that limitation.
+
+After `dsh-cordis-debug rotate-token --profile web`, wait for the user to
+reload DSH through its normal workflow. An already-running bridge may still
+hold its old remote connection. If the first tool request after reload fails,
+the Agent may explicitly retry that same request once; this is when the bridge
+reconnects and rereads the token file. Never automatically retry or replay a
+tool call, and do not issue more than that one explicit retry. If it fails
+again, report the failure and use `doctor`/connection diagnostics.
+
+The Skill does not silently enable the DSH plugin, create a host connection, or
+supply credentials during an ordinary debugging task. Before using it, the
+DSH profile must enable `dsh-cordis-devtools` MCP and the Agent host must have
+either the stdio bridge or the manual Streamable HTTP endpoint configured:
+
+```text
+http://127.0.0.1:43127/mcp
+```
+
+When the DSH MCP configuration has a token, configure that token in the Agent host's secret or environment facility. The model must never receive the token in a task, prompt, Skill input, tool argument, log, checkpoint, or source file. The MCP client, rather than the model, sends `Authorization: Bearer ...`.
+
+For the manual HTTP route, set `CORDIS_DEVTOOLS_MCP_TOKEN` in the environment
+that launches Codex, then register the endpoint once:
+
+```bash
+codex mcp add dsh-cordis-devtools --url http://127.0.0.1:43127/mcp --bearer-token-env-var CORDIS_DEVTOOLS_MCP_TOKEN
+```
+
+Reload the Agent host after changing its MCP configuration. Confirm the connection through tool discovery: `cordis_list_debug_targets` and the other DSH tools must be available before starting a workflow. If they are absent, report the connection/configuration limitation and stop; do not construct raw HTTP requests, ask the user to paste a token into chat, or substitute the JSON CLI for an unavailable native MCP tool.
+
 ## Tool availability and safety
 
-The planned Agent workflow uses these tools exactly:
+The session workflow uses these tools exactly:
 
 - `cordis_list_debug_targets`
 - `cordis_attach_debug_session`

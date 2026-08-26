@@ -1,12 +1,15 @@
-# Architecture: DSH DevTools for Agents (v0.7)
+# Architecture: DSH DevTools for Agents (v0.8)
 
 ## Product boundary
 
 dsh-cordis-devtools is an Agent-facing runtime debugging product for a live
 DeepSeek Harness (DSH) / Cordis process. MCP is the primary Agent surface; a
 focused CLI and an installable debugging Skill are clients of the same MCP
-tools. The runtime is the source of truth, and the product exposes bounded,
-metadata-only evidence plus controlled profiling.
+tools. Agent hosts can connect through the package-local stdio bridge, which
+forwards authenticated loopback HTTP MCP without exposing token material to
+the model. Profile-scoped setup, doctor, and token rotation own this local
+bootstrap lifecycle. The runtime is the source of truth, and the product
+exposes bounded, metadata-only evidence plus controlled profiling.
 
 The intended workflow is:
 
@@ -17,7 +20,7 @@ discover target → attach session → explore snapshot → wait for change
 ~~~
 
 This is not a general DSH control plane or a claim of Chrome CDP
-compatibility. v0.7 does not provide automated root-cause diagnosis, source
+compatibility. v0.8 does not provide automated root-cause diagnosis, source
 editing, reload/reproduction, dispatch injection, breakpoints, pause/resume,
 expression evaluation, payload capture, or a complete audit log.
 
@@ -50,6 +53,13 @@ expression evaluation, payload capture, or a complete audit log.
        ▼                             ▼                             ▼
  dsh-cordis-debug CLI       DSH Agent workflows             Fibers/events/profiler
  + dsh-runtime-debugging Skill
+
+ Agent host
+       │ stdio MCP
+       ▼
+ dsh-cordis-devtools-mcp
+       │ authenticated loopback HTTP MCP
+       └──────────────────────────────► MCP (primary)
 
                  future native DSH protocol / IDE client
                  raw WebSocket/CDP wire compatibility deferred
@@ -178,12 +188,25 @@ cordis_stop_waterfall_experiment
 The adapter validates request schemas and routes to the Core; it does not own
 a second target, journal, snapshot projection, or coordinator. Read-only MCP
 requests may run without a token for local development. If configured, a
-bearer token is required on every request. Experiment mutation additionally
-requires a non-empty token and mcp.experiments.enabled: true. External MCP
-has no truthful DSH Agent identity and does not use ctx.approval; DSH-native
-experiment tools retain their one-shot approval gate.
+bearer token is required on every request. `mcp.tokenFile` is the bootstrap
+path's owner-only credential source and takes precedence over inline `mcp.token`;
+the token file is read by the Host without being transported in diagnostics.
+Experiment mutation additionally requires a non-empty token and
+mcp.experiments.enabled: true. External MCP has no truthful DSH Agent identity
+and does not use ctx.approval; DSH-native experiment tools retain their
+one-shot approval gate.
 
 ## Existing adapters and clients
+
+The package-local `dsh-cordis-devtools-mcp` bin is a stdio MCP server and lazy
+Streamable HTTP client. It reads the owner-only token file only when opening
+or re-opening the DSH connection, forwards the existing tool schemas/results,
+and never automatically retries or replays a failed tool call. A profile
+`setup --agent codex` command writes the selected patch/token file and invokes
+Codex registration; `doctor` performs secret-free authenticated discovery, and
+`rotate-token` replaces the token while leaving normal DSH reload under user
+control. The manual HTTP MCP route remains supported. This repository's
+package-local bin is not an `npx` publication claim.
 
 [src/host/cordis-inspect.ts](../src/host/cordis-inspect.ts) remains a
 read-only CordisRuntime provider and preserves existing discovery/query
@@ -272,7 +295,8 @@ Examples:
 
 The package boundary is defined by [package.json](../package.json): compiled
 lib, cordis.patch.yml, README.md, LICENSE, and skills are published; the
-dsh-cordis-debug bin resolves to lib/cli.js. The public module exports shared
+dsh-cordis-debug bin resolves to lib/cli.js and the
+dsh-cordis-devtools-mcp bin resolves to lib/bridge-entry.js. The public module exports shared
 Agent Debug contract types/constants and existing service contracts. Host
 implementation files and test fixtures are not a second public runtime API.
 
@@ -286,7 +310,7 @@ boundaries, not implied by a local build or this document.
 ## Deferred native protocol
 
 The Core leaves room for a native DSH Debug Protocol for an IDE or dedicated
-debugger. v0.7 does not add a WebSocket listener, /json/list, /json/version,
+debugger. v0.8 does not add a WebSocket listener, /json/list, /json/version,
 raw event push, or CDP wire compatibility. It does not claim an MCP-native
 Agent can consume an arbitrary custom WebSocket without a client adapter.
 
