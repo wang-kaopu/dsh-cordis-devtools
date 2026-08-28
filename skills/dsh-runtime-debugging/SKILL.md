@@ -59,9 +59,27 @@ that launches Codex, then register the endpoint once:
 codex mcp add dsh-cordis-devtools --url http://127.0.0.1:43127/mcp --bearer-token-env-var CORDIS_DEVTOOLS_MCP_TOKEN
 ```
 
-Reload the Agent host after changing its MCP configuration. Confirm the connection through tool discovery: `cordis_list_debug_targets` and the other DSH tools must be available before starting a workflow. If they are absent, report the connection/configuration limitation and stop; do not construct raw HTTP requests, ask the user to paste a token into chat, or substitute the JSON CLI for an unavailable native MCP tool.
+Reload the Agent host after changing its MCP configuration. Confirm the connection through tool discovery: `cordis_list_debug_targets` and the other DSH tools must be available before starting a workflow. If the discoverable protocol primitives are available, call `cordis_devtools_get_protocol` first and use its Schema/Target/Cordis/Fiber/Profiler descriptions to choose commands. If the tools are absent, report the connection/configuration limitation and stop; do not construct raw HTTP requests, ask the user to paste a token into chat, or substitute the JSON CLI for an unavailable native MCP tool.
 
 ## Tool availability and safety
+
+The generic protocol primitives are:
+
+- `cordis_devtools_get_protocol`
+- `cordis_devtools_list_targets`
+- `cordis_devtools_attach`
+- `cordis_devtools_send`
+- `cordis_devtools_read_events`
+- `cordis_devtools_wait_for_event`
+- `cordis_devtools_detach`
+
+They are an MCP adapter over the same Agent Debug Core. Use the returned
+schema to discover command names, keep the exact `sessionId` and
+`targetEpoch`, and recover from `gap` with a fresh `Cordis.getSnapshot`. The
+protocol is CDP-shaped in message organization only; it is not Chrome CDP.
+An optional native WebSocket endpoint exists only when the Host explicitly
+enables `protocol.websocket`; it is loopback-only and shares the bounded Core
+journal.
 
 The session workflow uses these tools exactly:
 

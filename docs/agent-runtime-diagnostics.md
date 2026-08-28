@@ -7,8 +7,9 @@ facts.
 
 The product follows the useful part of a Chrome DevTools workflow—discover a
 target, attach a session, explore, wait for changes, verify a before/after
-transition, and optionally profile one bounded operation—without exposing raw
-CDP frames or claiming CDP wire compatibility.
+transition, and optionally profile one bounded operation. An optional native
+loopback WebSocket adapter exposes the same CDP-shaped commands/events, but it
+does not claim Chrome CDP wire or domain compatibility.
 
 ```text
 Agent → MCP tools → Host AgentDebugService → live Cordis observer/profiler
@@ -29,6 +30,23 @@ or clean comparison is a mechanical fact. It is not an automatic root-cause,
 is bounded and therefore cannot prove that an event never happened.
 
 ## MCP-first workflow
+
+### Discoverable protocol primitives
+
+Agents that prefer one command router can first call
+`cordis_devtools_get_protocol`, then use
+`cordis_devtools_list_targets` → `cordis_devtools_attach` →
+`cordis_devtools_send`. `cordis_devtools_read_events` and
+`cordis_devtools_wait_for_event` consume the same bounded metadata-only
+observation journal; `cordis_devtools_detach` releases the exact session's
+waiters, cursors, and profiler lease. The protocol domains are `Schema`,
+`Target`, `Cordis`, `Fiber`, and `Profiler`.
+
+The protocol is CDP-shaped only in its discoverable command/event/session
+interaction model. It is not Chrome DevTools Protocol wire or domain
+compatibility. A native endpoint is available only when
+`protocol.websocket.enabled: true`; it remains loopback-only and uses the
+same bounded Core journal as MCP.
 
 ### The five Agent Debug session tools
 
@@ -381,6 +399,7 @@ Cordis event execution, generic listener/service/config mutation, persistent
 approvals, lease renewal or concurrent leases, remote/LAN MCP, raw payload
 capture, automatic root-cause or fix claims, breakpoints, pause/step,
 expression evaluation, non-waterfall profiling, or a complete event history.
-There is no raw CDP-compatible WebSocket endpoint and no CDP wire-protocol
-compatibility claim. MCP, the JSON CLI, and the Skill are the supported Agent
-routes.
+The native WebSocket endpoint is CDP-shaped only and does not provide Chrome
+domains, remote/LAN exposure, or Chrome DevTools Frontend compatibility. MCP,
+the JSON CLI, the Skill, and the explicitly enabled loopback WebSocket adapter
+are supported Agent routes.

@@ -22,17 +22,17 @@ export function TimelineView({
   return (
     <main className={css.timeline} aria-label="Recent Cordis dispatches">
       <div className={css.timelineNotice}>
-        Recent bounded dispatches. This view is not a complete or lossless audit log.
+        Recent bounded dispatches. Dispatch scope is the explicit Cordis thisArg when provided, not the producer Fiber.
       </div>
       {dispatches.length === 0 ? (
         <div className={css.empty}>No matching dispatches.</div>
       ) : (
         <div className={css.timelineList}>
           {dispatches.map((record) => {
-            const context = record.thisFiber
-            const contextIsLive = context?.uid !== null
-              && context?.uid !== undefined
-              && liveFiberUids.has(context.uid)
+            const scope = record.thisFiber
+            const scopeIsLive = scope?.uid !== null
+              && scope?.uid !== undefined
+              && liveFiberUids.has(scope.uid)
             return (
               <div key={record.id} data-dispatch-id={record.id} className={css.timelineCard}>
                 <DisclosureRow
@@ -56,17 +56,17 @@ export function TimelineView({
                     <Detail label="arguments" value={String(record.argCount)} />
                     <Detail label="registered listeners" value={String(record.registeredListeners)} />
                     <Detail
-                      label="dispatch context"
-                      value={context === null
-                        ? 'unknown'
-                        : contextIsLive && context.uid !== null
+                      label="dispatch scope"
+                      value={scope === null
+                        ? 'none'
+                        : scopeIsLive && scope.uid !== null
                           ? (
                               <span className={detailCss.detailPills}>
-                                <Pill onClick={() => { onOpenFiber(context.uid as number) }}>{context.name}</Pill>
-                                <span>uid {context.uid} · {context.state}</span>
+                                <Pill onClick={() => { onOpenFiber(scope.uid as number) }}>{scope.name}</Pill>
+                                <span>uid {scope.uid} · {scope.state}</span>
                               </span>
                             )
-                          : `${context.name} · uid ${context.uid ?? 'disposed'} · ${context.state} · not live`}
+                          : `${scope.name} · uid ${scope.uid ?? 'disposed'} · ${scope.state} · not live`}
                     />
                   </dl>
                 </DisclosureRow>

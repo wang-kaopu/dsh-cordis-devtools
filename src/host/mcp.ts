@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto'
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
@@ -23,6 +22,16 @@ import {
   MAX_AGENT_DEBUG_WAIT_TIMEOUT_MS,
 } from '../shared/agent-debug.js'
 import type {
+  DevtoolsProtocolCommandRequest,
+  DevtoolsProtocolDescription,
+  DevtoolsProtocolReadEventsInput,
+  DevtoolsProtocolReadEventsResult,
+  DevtoolsProtocolWaitForEventInput,
+  DevtoolsProtocolWaitForEventResult,
+  DevtoolsProtocolEventName,
+} from '../shared/devtools-protocol.js'
+import { isProtocolEvent } from '../shared/devtools-protocol.js'
+import type {
   AgentDebugExplorationSnapshot,
   AgentDebugCatalogInput,
   AgentDebugObservationType,
@@ -36,6 +45,7 @@ import type {
   AgentDebugWaitForRuntimeChangeResult,
 } from '../shared/agent-debug.js'
 import type { RuntimeDiagnosticsQuery } from './diagnostics.js'
+import { isAuthorized } from './auth.js'
 
 export const DEFAULT_MCP_PORT = 43127
 export const MCP_PATH = '/mcp'
@@ -74,6 +84,24 @@ export interface McpAgentDebugControl {
   ): WaterfallExperimentStopResult
 }
 
+/** MCP adapter surface for the transport-neutral DSH DevTools protocol. */
+export interface McpDevtoolsProtocolControl {
+  /** Return machine-readable protocol domains, commands, and events. */
+  getProtocol(): DevtoolsProtocolDescription
+  /** List active targets through the shared target registry. */
+  listTargets(): readonly AgentDebugTarget[]
+  /** Attach to one exact target incarnation. */
+  attach(targetId: AgentDebugTargetId): AgentDebugSessionDetail
+  /** Route one generic protocol command through the shared Core. */
+  send(request: DevtoolsProtocolCommandRequest, options?: { allowExperimentMutation?: boolean }): unknown
+  /** Read retained protocol events after a target-local cursor. */
+  readEvents(input: DevtoolsProtocolReadEventsInput): DevtoolsProtocolReadEventsResult
+  /** Wait for one bounded protocol event. */
+  waitForEvent(input: DevtoolsProtocolWaitForEventInput, signal?: AbortSignal): Promise<DevtoolsProtocolWaitForEventResult>
+  /** Detach one exact session. */
+  detach(sessionId: AgentDebugSessionId): AgentDebugSessionDetail | null
+}
+
 export interface EmbeddedMcpExperimentOptions {
   /** Expose mutating start/stop tools. Requires token + control. Default false. */
   enabled?: boolean
@@ -89,6 +117,8 @@ export interface EmbeddedMcpOptions {
   experiments?: EmbeddedMcpExperimentOptions
   /** Optional Agent Debug target/session capability. */
   agentDebug?: McpAgentDebugControl
+  /** Optional generic protocol adapter over the same Agent Debug Core. */
+  protocol?: McpDevtoolsProtocolControl
 }
 
 export interface EmbeddedMcpLifecycleOptions extends EmbeddedMcpOptions {
@@ -112,6 +142,7 @@ interface NormalizedMcpOptions {
   experimentControl: McpWaterfallExperimentControl | undefined
   experimentsEnabled: boolean
   agentDebug: McpAgentDebugControl | undefined
+  protocol: McpDevtoolsProtocolControl | undefined
 }
 
 const EMPTY_SCHEMA = objectSchema({})
@@ -228,6 +259,16 @@ const AGENT_DEBUG_TOOLS = [
   AGENT_DEBUG_SNAPSHOT_TOOL,
   AGENT_DEBUG_WAIT_TOOL,
   AGENT_DEBUG_DETACH_TOOL,
+]
+
+const PROTOCOL_TOOLS: Tool[] = [
+  readOnlyTool('cordis_devtools_get_protocol', 'Return the machine-readable DSH Agent Debug protocol schema.', EMPTY_SCHEMA),
+  readOnlyTool('cordis_devtools_list_targets', 'List discoverable DSH runtime targets.', EMPTY_SCHEMA),
+  readOnlyTool('cordis_devtools_attach', 'Attach a generic protocol session to one exact runtime target.', objectSchema({ targetId: { type: 'string' } }, ['targetId']), false),
+  mutationTool('cordis_devtools_send', 'Send one discovered protocol command through the shared Agent Debug Core; profiler mutation remains authorization-gated.', objectSchema({ id: { type: 'number', description: 'Optional command id; defaults to 1 for this MCP call.' }, sessionId: { type: 'string' }, method: { type: 'string' }, params: { type: 'object' } }, ['sessionId', 'method'])),
+  readOnlyTool('cordis_devtools_read_events', 'Read retained metadata-only protocol events after a target-local cursor.', objectSchema({ sessionId: { type: 'string' }, afterSequence: { type: 'number' }, method: { type: 'string' }, event: { type: 'string' } }, ['sessionId']), false),
+  readOnlyTool('cordis_devtools_wait_for_event', 'Wait for one bounded metadata-only protocol event.', objectSchema({ sessionId: { type: 'string' }, afterSequence: { type: 'number' }, method: { type: 'string' }, event: { type: 'string' }, timeoutMs: { type: 'number' } }, ['sessionId']), false),
+  readOnlyTool('cordis_devtools_detach', 'Detach one generic protocol debug session.', objectSchema({ sessionId: { type: 'string' } }, ['sessionId']), false),
 ]
 
 /**
@@ -358,7 +399,7 @@ function createProtocolServer(
   const tools = experimentTools(options)
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }))
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     try {
       const args = readObject(request.params.arguments)
       let value: unknown
@@ -438,6 +479,36 @@ function createProtocolServer(
           value = detached
           break
         }
+        case 'cordis_devtools_get_protocol':
+          value = requireProtocolControl(options).getProtocol()
+          break
+        case 'cordis_devtools_list_targets':
+          value = { targets: requireProtocolControl(options).listTargets() }
+          break
+        case 'cordis_devtools_attach':
+          value = requireProtocolControl(options).attach(readRequiredString(args, 'targetId'))
+          break
+        case 'cordis_devtools_send': {
+          const protocol = requireProtocolControl(options)
+          const id = readOptionalNumber(args, 'id') ?? 1
+          const method = readRequiredString(args, 'method')
+          const sessionId = readRequiredString(args, 'sessionId')
+          const params = args.params === undefined ? undefined : readObject(args.params)
+          value = protocol.send({ id, method, sessionId, ...(params === undefined ? {} : { params }) }, { allowExperimentMutation: options.experimentsEnabled && options.token !== undefined })
+          break
+        }
+        case 'cordis_devtools_read_events':
+          value = requireProtocolControl(options).readEvents(readProtocolEventInput(args))
+          break
+        case 'cordis_devtools_wait_for_event':
+          value = await requireProtocolControl(options).waitForEvent(readProtocolWaitInput(args), extra.signal)
+          break
+        case 'cordis_devtools_detach': {
+          const detached = requireProtocolControl(options).detach(readRequiredString(args, 'sessionId'))
+          if (detached === null) throw new Error('debug session is unavailable or already detached')
+          value = detached
+          break
+        }
         case 'cordis_waterfall_experiment_status':
           value = requireExperimentControl(options).status()
           break
@@ -485,6 +556,7 @@ function createProtocolServer(
 function experimentTools(options: NormalizedMcpOptions): Tool[] {
   const tools = [...READ_ONLY_TOOLS]
   if (options.agentDebug !== undefined) tools.push(...AGENT_DEBUG_TOOLS)
+  if (options.protocol !== undefined) tools.push(...PROTOCOL_TOOLS)
   if (options.experimentControl !== undefined) tools.push(EXPERIMENT_STATUS_TOOL)
   if (options.experimentsEnabled) tools.push(EXPERIMENT_START_TOOL, EXPERIMENT_STOP_TOOL)
   return tools
@@ -540,24 +612,13 @@ function normalizeMcpOptions(options: EmbeddedMcpOptions): NormalizedMcpOptions 
   if (experimentsEnabled && experimentControl === undefined) {
     throw new Error('dsh-cordis-devtools: MCP experiments require an experiment control')
   }
-  return { token, experimentControl, experimentsEnabled, agentDebug: options.agentDebug }
+  return { token, experimentControl, experimentsEnabled, agentDebug: options.agentDebug, protocol: options.protocol }
 }
 
 function normalizeToken(token: string | undefined): string | undefined {
   if (token === undefined) return undefined
   if (token.trim() === '') throw new Error('dsh-cordis-devtools: MCP bearer token must not be empty')
   return token
-}
-
-function isAuthorized(req: IncomingMessage, token: string | undefined): boolean {
-  if (token === undefined) return true
-  const header = req.headers.authorization
-  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return false
-  const presented = header.slice('Bearer '.length)
-  const expectedBytes = Buffer.from(token)
-  const presentedBytes = Buffer.from(presented)
-  if (expectedBytes.byteLength !== presentedBytes.byteLength) return false
-  return timingSafeEqual(expectedBytes, presentedBytes)
 }
 
 function requireExperimentControl(options: NormalizedMcpOptions): McpWaterfallExperimentControl {
@@ -572,6 +633,11 @@ function requireExperimentMutation(options: NormalizedMcpOptions): void {
 function requireAgentDebugControl(options: NormalizedMcpOptions): McpAgentDebugControl {
   if (options.agentDebug === undefined) throw new Error('Agent Debug control is unavailable')
   return options.agentDebug
+}
+
+function requireProtocolControl(options: NormalizedMcpOptions): McpDevtoolsProtocolControl {
+  if (options.protocol === undefined) throw new Error('DSH DevTools protocol control is unavailable')
+  return options.protocol
 }
 
 function requestPath(req: IncomingMessage): string {
@@ -638,6 +704,36 @@ function readOptionalNumber(row: Record<string, unknown>, key: string): number |
   const value = row[key]
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${key} must be a finite number`)
+  return value
+}
+
+/** Parses the MCP event-read primitive into a transport-neutral input. */
+function readProtocolEventInput(row: Record<string, unknown>): DevtoolsProtocolReadEventsInput {
+  const afterSequence = readOptionalNonNegativeInteger(row, 'afterSequence')
+  const method = readOptionalProtocolEvent(row)
+  const event = readOptionalString(row, 'event')
+  return {
+    debugSessionId: readRequiredString(row, 'sessionId'),
+    ...(afterSequence === undefined ? {} : { afterSequence }),
+    ...(method === undefined ? {} : { method }),
+    ...(event === undefined ? {} : { event }),
+  }
+}
+
+/** Parses the MCP bounded event-wait primitive into a transport-neutral input. */
+function readProtocolWaitInput(row: Record<string, unknown>): DevtoolsProtocolWaitForEventInput {
+  const timeoutMs = readOptionalBoundedWaitTimeout(row)
+  return {
+    ...readProtocolEventInput(row),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  }
+}
+
+/** Validates an optional protocol event filter against the shared event registry. */
+function readOptionalProtocolEvent(row: Record<string, unknown>): DevtoolsProtocolEventName | undefined {
+  const value = readOptionalString(row, 'method')
+  if (value === undefined) return undefined
+  if (!isProtocolEvent(value)) throw new TypeError(`method contains unsupported protocol event: ${value}`)
   return value
 }
 

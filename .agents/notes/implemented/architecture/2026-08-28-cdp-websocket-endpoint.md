@@ -1,6 +1,6 @@
 # Agent Note: 增加 CDP-shaped WebSocket endpoint
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -10,9 +10,11 @@ Status: proposed
 
 本方案是独立的后续 transport adapter。它应建立在统一 DevTools Protocol Core 之上；若 Protocol Core 尚未实现，Codex 应先补齐本 Note 所需的最小 transport-neutral command/event 接口，而不是在 WebSocket server 内复制一套 target/session/journal/diagnostics 状态。
 
-## Proposal
+## Decision
 
-增加一个可选、默认关闭、loopback-only 的 CDP-shaped WebSocket adapter，共享现有/计划中的 Protocol Core、target/session、bounded observation journal、security policy 和 profiler coordinator。
+增加一个可选、默认关闭、loopback-only 的 CDP-shaped WebSocket adapter，共享现有 Protocol Core、target/session、bounded observation journal、security policy 和 profiler coordinator。实现位于 `src/host/protocol-websocket.ts`，由 `src/index.ts` 的 `protocol.websocket` 配置按 Cordis Fiber 生命周期安装；独立 listener 默认使用 `127.0.0.1:43128`，认证复用 `src/host/auth.ts` 的 Bearer 校验。
+
+target-scoped connection 建立时自动 attach，并通过 `Target.attachedToTarget` 握手事件返回 session；`Cordis.readEvents` 复用同一 Core journal 进行 replay/gap recovery。实时推送使用每连接一个 Core `waitForEvent()` waiter，连接建立时仅保留 Target 生命周期事件，Cordis/Profiler 必须显式 enable。每连接 outbound queue 同时受消息数与 UTF-8 字节数限制，超限以稳定 close code 显式断开。
 
 ### 1. Discovery endpoints
 
@@ -346,7 +348,7 @@ tests/protocol-discovery.spec.ts
 
 **把长期 bearer token 放在 WebSocket URL query。** 不作为默认方案，因为 URL 更容易进入 history/log/telemetry。优先 header；浏览器兼容需要另行设计短期 ticket。
 
-## Acceptance criteria
+## Consequences
 
 - WebSocket adapter 默认关闭且默认只监听 loopback。
 - 提供 `/json/version`、`/json/list`、`/json/protocol`，内容描述 dsh-cordis-devtools 自身，不伪造 Chrome/Chromium。
@@ -361,7 +363,7 @@ tests/protocol-discovery.spec.ts
 - 不宣称 Chrome DevTools Frontend、browser domains 或 `chrome://inspect` 兼容。
 - 真实 loopback WebSocket tests、`pnpm verify:policy`、`pnpm typecheck`、`pnpm test`、`pnpm build` 通过。
 
-## Risks
+## Limitations
 
 **WebSocket 与 Protocol Core 生命周期耦合错误。** 如果 adapter 比 Core 活得更久，可能在 teardown 中投递到已释放 session；必须定义明确 dispose 顺序并覆盖 Host shutdown/target replacement tests。
 

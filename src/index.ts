@@ -3,6 +3,7 @@ import { installCordisRuntimeInspect } from './host/cordis-inspect.js'
 import { installDshExperimentTools } from './host/dsh-experiments.js'
 import { createMcpExperimentControl } from './host/mcp-experiment-control.js'
 import { DEFAULT_MCP_PORT, installEmbeddedMcpServer } from './host/mcp.js'
+import { installProtocolWebSocket } from './host/protocol-websocket.js'
 import { installDevtoolsRpc } from './host/rpc.js'
 import { DevtoolsService } from './host/service.js'
 import { readMcpTokenFile } from './bootstrap/token-store.js'
@@ -30,6 +31,26 @@ export interface McpConfig {
   failOnStartupError?: boolean
 }
 
+export interface ProtocolWebSocketConfig {
+  /** Expose the loopback protocol WebSocket endpoint. Default false. */
+  enabled?: boolean
+  /** Bind address. Defaults to 127.0.0.1. */
+  host?: string
+  /** Loopback TCP port. Default 43128. Use 0 only for programmatic ephemeral-port tests. */
+  port?: number
+  /** Optional independent bearer token. Falls back to the resolved MCP token when omitted. */
+  token?: string
+  /** Absolute normalized owner-only token file. Takes precedence over token. */
+  tokenFile?: string
+  /** Reject plugin activation if the WebSocket listener cannot start. Default false. */
+  failOnStartupError?: boolean
+}
+
+export interface ProtocolConfig {
+  /** Optional native protocol transport configuration. */
+  websocket?: ProtocolWebSocketConfig
+}
+
 export interface Config {
   /** Maximum number of recent dispatch records kept in memory. */
   maxDispatches?: number
@@ -37,6 +58,8 @@ export interface Config {
   maxTraces?: number
   /** Optional external-agent MCP endpoint; always bound to 127.0.0.1. */
   mcp?: McpConfig
+  /** Optional native protocol transports. */
+  protocol?: ProtocolConfig
 }
 
 export async function apply(ctx: Context, config: Config = {}): Promise<void> {
@@ -45,6 +68,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     : config.mcp.tokenFile === undefined
       ? config.mcp.token
       : await readMcpTokenFile(config.mcp.tokenFile)
+  const websocketConfig = config.protocol?.websocket
+  const websocketToken = websocketConfig?.enabled !== true
+    ? undefined
+    : websocketConfig.tokenFile === undefined
+      ? websocketConfig.token ?? mcpToken
+      : await readMcpTokenFile(websocketConfig.tokenFile)
 
   const service = new DevtoolsService(ctx, {
     maxDispatches: config.maxDispatches,
@@ -83,7 +112,17 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         startAgent: (debugSessionId, source, input) => service.agentDebug.startAgent(debugSessionId, source, input),
         stopAgent: (debugSessionId, input) => service.agentDebug.stopAgent(debugSessionId, input),
       },
+      protocol: service.agentDebugProtocol,
       ...(experiments === undefined ? {} : { experiments }),
+    })
+  }
+
+  if (websocketConfig?.enabled === true) {
+    await installProtocolWebSocket(ctx, service.agentDebugProtocol, {
+      host: websocketConfig.host ?? '127.0.0.1',
+      port: websocketConfig.port ?? 43128,
+      token: websocketToken,
+      failOnStartupError: websocketConfig.failOnStartupError ?? false,
     })
   }
 }
@@ -105,6 +144,8 @@ export type {
   AgentDebugObservation,
   AgentDebugObservationBase,
   AgentDebugObservationFilter,
+  AgentDebugReadObservationsInput,
+  AgentDebugReadObservationsResult,
   AgentDebugObservationSequence,
   AgentDebugObservationType,
   AgentDebugObservationWindow,
@@ -133,6 +174,40 @@ export type {
   AgentDebugWaitGap,
   AgentDebugWaitTimeout,
 } from './shared/agent-debug.js'
+export type {
+  DevtoolsProtocolCommandDescriptor,
+  DevtoolsProtocolCommandRequest,
+  DevtoolsProtocolDescription,
+  DevtoolsProtocolDomainDescriptor,
+  DevtoolsProtocolDomainName,
+  DevtoolsProtocolError,
+  DevtoolsProtocolErrorCode,
+  DevtoolsProtocolErrorResponse,
+  DevtoolsProtocolEvent,
+  DevtoolsProtocolEventDescriptor,
+  DevtoolsProtocolEventName,
+  DevtoolsProtocolEventFilter,
+  DevtoolsProtocolReadEventsInput,
+  DevtoolsProtocolReadEventsResult,
+  DevtoolsProtocolResponse,
+  DevtoolsProtocolSchema,
+  DevtoolsProtocolSuccessResponse,
+  DevtoolsProtocolWaitForEventInput,
+  DevtoolsProtocolWaitForEventResult,
+  DevtoolsProtocolJsonValue,
+} from './shared/devtools-protocol.js'
+export {
+  DEVTOOLS_PROTOCOL_DESCRIPTION,
+  DEVTOOLS_PROTOCOL_DOMAINS,
+  DEVTOOLS_PROTOCOL_ERROR_CODES,
+  DEVTOOLS_PROTOCOL_EVENTS,
+  DEVTOOLS_PROTOCOL_METHODS,
+  isProtocolEvent,
+  isProtocolMethod,
+  observationTypeForProtocolEvent,
+  projectDevtoolsProtocolEvent,
+  protocolDomainForEvent,
+} from './shared/devtools-protocol.js'
 export {
   AGENT_DEBUG_CAPABILITIES,
   AGENT_DEBUG_MECHANICAL_CANDIDATE_KINDS,
