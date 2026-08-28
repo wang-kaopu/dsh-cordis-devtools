@@ -75,7 +75,9 @@ export class ObserverCollector implements CordisDevtoolsService {
     ) => () => boolean
 
     on('internal/dispatch', (mode: DispatchMode, event: string, args: unknown[], thisArg: unknown) => {
-      const thisFiber = this.adapter.snapshotFiber(thisArg)
+      // Cordis exposes the explicit dispatch thisArg here. It is a listener/filter scope,
+      // not the Context/Fiber that called emit/parallel/serial/etc.
+      const dispatchScope = this.adapter.snapshotFiber(thisArg)
       const dispatch = {
         id: this.nextDispatchId++,
         timestamp: Date.now(),
@@ -83,7 +85,7 @@ export class ObserverCollector implements CordisDevtoolsService {
         event,
         argCount: Array.isArray(args) ? args.length : 0,
         registeredListeners: this.adapter.countRegisteredListeners(event),
-        thisFiber,
+        thisFiber: dispatchScope,
       }
       this.dispatches.push(dispatch)
       this.runtimeNotifications?.publish({
