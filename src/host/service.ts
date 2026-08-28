@@ -16,6 +16,7 @@ import type {
 import { ObserverCollector } from './collector.js'
 import { RuntimeDiagnosticsQuery } from './diagnostics.js'
 import { AgentDebugService } from './agent-debug/service.js'
+import { AgentDebugProtocol } from './agent-debug/protocol.js'
 import { WaterfallInstrumentationController } from './instrumentation/waterfall-controller.js'
 import { WaterfallExperimentCoordinator } from './instrumentation/waterfall-experiment-coordinator.js'
 import { RuntimeNotificationSource } from './runtime-notifications.js'
@@ -34,6 +35,8 @@ export class DevtoolsService implements CordisDevtoolsService, WaterfallProfiler
   private readonly runtimeNotifications: RuntimeNotificationSource
   /** Host-owned transport-neutral Agent Debug facade. */
   readonly agentDebug: AgentDebugService
+  /** Generic protocol router over the Agent Debug facade. */
+  readonly agentDebugProtocol: AgentDebugProtocol
   readonly diagnostics: RuntimeDiagnosticsQuery
 
   constructor(ctx: Context, options: DevtoolsServiceOptions = {}) {
@@ -70,6 +73,7 @@ export class DevtoolsService implements CordisDevtoolsService, WaterfallProfiler
       },
     })
     this.diagnostics = new RuntimeDiagnosticsQuery(this)
+    this.agentDebugProtocol = new AgentDebugProtocol(this.agentDebug, this.diagnostics)
   }
 
   snapshot(): DevtoolsSnapshot {

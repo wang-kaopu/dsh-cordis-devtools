@@ -63,6 +63,7 @@ function session(status: AgentDebugSessionDetail['status'] = 'active'): AgentDeb
 function snapshot(): AgentDebugExplorationSnapshot {
   return {
     generatedAt: 3,
+    eventCursor: 4,
     target: target(),
     session: session(),
     summary: { generatedAt: 3, events: 1, listeners: 1, liveFibers: 1, dispatchesRetained: 1, tracesRetained: 0 },

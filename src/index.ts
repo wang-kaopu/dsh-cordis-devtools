@@ -83,6 +83,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         startAgent: (debugSessionId, source, input) => service.agentDebug.startAgent(debugSessionId, source, input),
         stopAgent: (debugSessionId, input) => service.agentDebug.stopAgent(debugSessionId, input),
       },
+      protocol: service.agentDebugProtocol,
       ...(experiments === undefined ? {} : { experiments }),
     })
   }
@@ -105,6 +106,8 @@ export type {
   AgentDebugObservation,
   AgentDebugObservationBase,
   AgentDebugObservationFilter,
+  AgentDebugReadObservationsInput,
+  AgentDebugReadObservationsResult,
   AgentDebugObservationSequence,
   AgentDebugObservationType,
   AgentDebugObservationWindow,
@@ -133,6 +136,40 @@ export type {
   AgentDebugWaitGap,
   AgentDebugWaitTimeout,
 } from './shared/agent-debug.js'
+export type {
+  DevtoolsProtocolCommandDescriptor,
+  DevtoolsProtocolCommandRequest,
+  DevtoolsProtocolDescription,
+  DevtoolsProtocolDomainDescriptor,
+  DevtoolsProtocolDomainName,
+  DevtoolsProtocolError,
+  DevtoolsProtocolErrorCode,
+  DevtoolsProtocolErrorResponse,
+  DevtoolsProtocolEvent,
+  DevtoolsProtocolEventDescriptor,
+  DevtoolsProtocolEventName,
+  DevtoolsProtocolEventFilter,
+  DevtoolsProtocolReadEventsInput,
+  DevtoolsProtocolReadEventsResult,
+  DevtoolsProtocolResponse,
+  DevtoolsProtocolSchema,
+  DevtoolsProtocolSuccessResponse,
+  DevtoolsProtocolWaitForEventInput,
+  DevtoolsProtocolWaitForEventResult,
+  DevtoolsProtocolJsonValue,
+} from './shared/devtools-protocol.js'
+export {
+  DEVTOOLS_PROTOCOL_DESCRIPTION,
+  DEVTOOLS_PROTOCOL_DOMAINS,
+  DEVTOOLS_PROTOCOL_ERROR_CODES,
+  DEVTOOLS_PROTOCOL_EVENTS,
+  DEVTOOLS_PROTOCOL_METHODS,
+  isProtocolEvent,
+  isProtocolMethod,
+  observationTypeForProtocolEvent,
+  projectDevtoolsProtocolEvent,
+  protocolDomainForEvent,
+} from './shared/devtools-protocol.js'
 export {
   AGENT_DEBUG_CAPABILITIES,
   AGENT_DEBUG_MECHANICAL_CANDIDATE_KINDS,
