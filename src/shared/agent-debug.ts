@@ -289,6 +289,8 @@ export interface AgentDebugSnapshotInput {
 /** Metadata-only exploration snapshot assembled from authoritative Host facts. */
 export interface AgentDebugExplorationSnapshot {
   generatedAt: number
+  /** Journal sequence captured before snapshot traversal began. */
+  eventCursor: AgentDebugObservationSequence
   target: AgentDebugTarget
   session: AgentDebugSessionDetail
   summary: AgentDebugRuntimeSummary | null
@@ -315,6 +317,21 @@ export interface AgentDebugWaitForRuntimeChangeInput {
   type?: AgentDebugObservationType
   event?: string
   timeoutMs?: number
+}
+
+/** Input for reading retained metadata-only observations after a cursor. */
+export interface AgentDebugReadObservationsInput {
+  debugSessionId: AgentDebugSessionId
+  afterSequence?: AgentDebugObservationSequence
+  type?: AgentDebugObservationType
+  event?: string
+}
+
+/** Result of reading the bounded target-local observation journal. */
+export interface AgentDebugReadObservationsResult {
+  observations: readonly AgentDebugObservation[]
+  window: AgentDebugObservationWindow
+  session: AgentDebugSessionDetail
 }
 
 /** Found observation returned by a bounded wait. */

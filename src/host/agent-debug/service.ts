@@ -13,6 +13,8 @@ import {
   type AgentDebugCatalogCursor,
   type AgentDebugCatalogInput,
   type AgentDebugExplorationSnapshot,
+  type AgentDebugReadObservationsInput,
+  type AgentDebugReadObservationsResult,
   type AgentDebugSessionDetail,
   type AgentDebugSessionId,
   type AgentDebugSnapshotInput,
@@ -34,6 +36,7 @@ import {
   projectAgentDebugSnapshot,
 } from './snapshot-projection.js'
 import type { RuntimeNotification, RuntimeNotificationSource } from '../runtime-notifications.js'
+import type { DevtoolsProtocolDomainName } from '../../shared/devtools-protocol.js'
 
 type Clock = () => number
 type IdFactory = () => string
@@ -102,6 +105,7 @@ export class AgentDebugService {
   private readonly journal: AgentDebugObservationJournal
   private readonly cursors = new Map<AgentDebugCatalogCursor, CursorRecord>()
   private readonly ownedLeases = new Map<string, AgentDebugSessionId>()
+  private readonly eventSubscriptions = new Map<AgentDebugSessionId, Set<DevtoolsProtocolDomainName>>()
   private readonly unsubscribeNotifications: () => void
   private readonly unsubscribeTargetLifecycle: () => void
   private readonly unsubscribeSessionEnd: () => void
@@ -160,7 +164,9 @@ export class AgentDebugService {
   attach(targetId: string): AgentDebugSessionDetail {
     const target = this.targets.getActive()
     if (target === null || target.targetId !== targetId) throw new Error('unknown or inactive Agent Debug target')
-    return this.sessions.attach(target)
+    const session = this.sessions.attach(target)
+    this.eventSubscriptions.set(session.debugSessionId, new Set(['Target', 'Cordis', 'Profiler']))
+    return session
   }
 
   /** MCP-facing alias for attaching a debug session. */
@@ -185,6 +191,11 @@ export class AgentDebugService {
     }
   }
 
+  /** Returns the active session detail after validating its target incarnation. */
+  assertActiveSession(debugSessionId: AgentDebugSessionId): AgentDebugSessionDetail {
+    return this.requireActiveSession(debugSessionId)
+  }
+
   /** Replaces the active target incarnation for Host reload/test seams. */
   replaceTarget(title = 'Cordis Runtime'): AgentDebugTarget {
     return this.targets.replace({
@@ -198,9 +209,11 @@ export class AgentDebugService {
     const session = this.requireActiveSession(input.debugSessionId)
     const sections = validateSections(input.sections)
     validateCatalogSelections(sections, input.catalogs)
+    const eventCursor = this.journal.latestSequence
     const projected = projectAgentDebugSnapshot({ observer: this.ports.snapshot(), profiler: this.ports.profilerSnapshot() })
     const snapshot = {
       generatedAt: this.now(),
+      eventCursor,
       target: this.requireActiveTarget(),
       session,
       summary: sections.includes('summary') ? projected.summary : null,
@@ -218,6 +231,36 @@ export class AgentDebugService {
   /** Alias named after the public Agent Debug operation. */
   debugSnapshot(input: AgentDebugSnapshotInput): AgentDebugExplorationSnapshot {
     return this.snapshot(input)
+  }
+
+  /** Reads the bounded observation journal through one active session cursor. */
+  readObservations(input: AgentDebugReadObservationsInput): AgentDebugReadObservationsResult {
+    const session = this.requireActiveSession(input.debugSessionId)
+    const afterSequence = input.afterSequence ?? session.observationSequence
+    if (!Number.isInteger(afterSequence) || afterSequence < 0) throw new RangeError('afterSequence must be a non-negative integer')
+    const window = this.journal.window(afterSequence)
+    const observations = window.gap ? [] : this.journal.read(afterSequence, { type: input.type, event: input.event })
+    const sequence = window.newestSequence ?? afterSequence
+    const updated = this.sessions.setObservationSequence(input.debugSessionId, sequence)
+    if (updated === null) throw new Error('unknown Agent Debug session')
+    const touched = this.sessions.touch(input.debugSessionId)
+    if (touched === null) throw new Error('unknown Agent Debug session')
+    return { observations, window, session: touched }
+  }
+
+  /** Enables or disables delivery of one protocol event domain for a session. */
+  setEventDomainEnabled(debugSessionId: AgentDebugSessionId, domain: DevtoolsProtocolDomainName, enabled: boolean): AgentDebugSessionDetail {
+    const session = this.requireActiveSession(debugSessionId)
+    const subscriptions = this.eventSubscriptions.get(debugSessionId)
+    if (subscriptions === undefined) throw new Error('unknown Agent Debug session')
+    if (enabled) subscriptions.add(domain)
+    else subscriptions.delete(domain)
+    return this.sessions.touch(session.debugSessionId) ?? session
+  }
+
+  /** Returns whether a protocol event domain is currently delivered to a session. */
+  isEventDomainEnabled(debugSessionId: AgentDebugSessionId, domain: DevtoolsProtocolDomainName): boolean {
+    return this.eventSubscriptions.get(debugSessionId)?.has(domain) ?? false
   }
 
   /** Waits for an exact metadata-only runtime observation from a session cursor. */
@@ -279,6 +322,7 @@ export class AgentDebugService {
     this.journal.dispose()
     this.targets.dispose()
     this.cursors.clear()
+    this.eventSubscriptions.clear()
     this.ownedLeases.clear()
   }
 
@@ -361,6 +405,7 @@ export class AgentDebugService {
   }
 
   private releaseSessionResources(sessionId: AgentDebugSessionId): void {
+    this.eventSubscriptions.delete(sessionId)
     for (const [cursor, record] of this.cursors) {
       if (record.sessionId !== sessionId) continue
       this.cursors.delete(cursor)

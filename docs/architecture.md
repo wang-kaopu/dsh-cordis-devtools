@@ -155,6 +155,13 @@ bounded absence never means “never happened”. Detach and Host disposal cance
 pending waits. Long-polling makes observations usable through normal MCP
 calls without requiring model hosts to consume arbitrary server push.
 
+The generic CDP-shaped command/event model is also available through the MCP
+protocol primitives `cordis_devtools_get_protocol`,
+`cordis_devtools_list_targets`, `cordis_devtools_attach`,
+`cordis_devtools_send`, `cordis_devtools_read_events`,
+`cordis_devtools_wait_for_event`, and `cordis_devtools_detach`. These are an
+adapter over the same Core, not a second target/session/journal owner.
+
 ## MCP-first Agent surface
 
 MCP is enabled only with mcp.enabled: true in [src/index.ts](../src/index.ts).
@@ -307,12 +314,13 @@ Skill, plugin loading, and MCP behavior; source imports alone are insufficient.
 npm publication, tags/releases, and remote deployment are release-process
 boundaries, not implied by a local build or this document.
 
-## Deferred native protocol
+## Deferred native transport
 
-The Core leaves room for a native DSH Debug Protocol for an IDE or dedicated
-debugger. v0.8 does not add a WebSocket listener, /json/list, /json/version,
-raw event push, or CDP wire compatibility. It does not claim an MCP-native
-Agent can consume an arbitrary custom WebSocket without a client adapter.
+The shared DSH Debug Protocol schema and command/event semantics now ship
+through MCP primitives. v0.8 still does not add a WebSocket listener,
+/json/list, /json/version, raw event push, or CDP wire compatibility. It does
+not claim an MCP-native Agent can consume an arbitrary custom WebSocket
+without a client adapter.
 
 A native protocol needs a separate decision for transport, discovery,
 authentication, concurrent sessions, notification/backpressure semantics,

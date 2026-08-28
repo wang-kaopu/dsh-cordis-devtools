@@ -1,6 +1,6 @@
 # Agent Note: 引入 CDP-shaped Agent 调试协议
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
@@ -12,9 +12,9 @@ Status: proposed
 
 本方案采用 CDP 有价值的部分：target、session、domain、command、event、schema discovery 和 JSON message shape；不模拟 Chromium/V8/DOM/Page/Network/Debugger 语义，也不以兼容 Chrome DevTools Frontend 为目标。
 
-## Proposal
+## Decision
 
-在现有 Agent Debug Core 之上引入一个 transport-neutral DevTools Protocol 层。MCP 仍是 Agent 的主 transport，但 Agent 面改成少量 protocol primitive；新增调试能力优先增加 protocol command/event，而不是继续增加 MCP tool 名称。
+在现有 Agent Debug Core 之上实现 transport-neutral DevTools Protocol 层。MCP 仍是 Agent 的主 transport，Agent 面通过少量 protocol primitives 访问可发现的 command/event 模型；新增调试能力优先增加 protocol command/event，而不是继续增加 MCP tool 名称。实现位于 `src/shared/devtools-protocol.ts`、`src/host/agent-debug/protocol.ts` 和 `src/host/mcp.ts`，target/session/journal/lease ownership 仍由现有 Core 持有。
 
 ### 1. 协议 JSON envelope
 
@@ -83,7 +83,7 @@ Fiber.*
 Profiler.*
 ```
 
-建议最小 command 集：
+第一版实现的 command 集：
 
 ```text
 Schema.getDomains
@@ -136,7 +136,7 @@ Profiler.statusChanged
 - experimental/deprecated 标志（如未来需要）；
 - protocol version。
 
-协议 schema 应成为 TypeScript contract 和 Agent introspection 的单一来源，避免 MCP schema、Browser client types、未来 WebSocket protocol JSON 各自维护一份。
+协议 schema 由 TypeScript contract 单一来源生成并通过 `Schema.getDomains` 暴露，避免 MCP schema、Browser client types、未来 WebSocket protocol JSON 各自维护一份。
 
 ### 4. MCP Agent primitive
 
@@ -151,6 +151,8 @@ cordis_devtools_read_events
 cordis_devtools_wait_for_event
 cordis_devtools_detach
 ```
+
+其中 generic sender 是可发现 command 的统一入口；它本身不授予 mutation authority，MCP adapter 只在 bearer token 和显式 experiment capability 同时满足时放行 Profiler mutation。其余 primitive 仅负责 discovery、session、bounded read/wait 和 detach。
 
 其中：
 
@@ -199,7 +201,7 @@ consume events with sequence > N
 
 ### 7. Browser 迁移边界
 
-本分支实现时优先完成 Protocol Core + MCP adapter。Browser 可以在同一实现中增加 protocol client adapter，但不要为了赶进度强制一次性删除旧 snapshot RPC。
+本分支完成 Protocol Core + MCP adapter；Browser protocol client、增量 reducer 和移除旧 snapshot polling 保持延期，不为了引入协议而删除现有 snapshot RPC。
 
 推荐迁移顺序：
 
@@ -235,7 +237,7 @@ Codex 实现时优先按下面边界修改；若实际代码已有更合适的�
 #### Host Core
 
 - `src/host/agent-debug/service.ts`
-  - 演进为或委托到唯一 Protocol Core；
+  - 保持唯一 target/session/journal/lease owner，并提供 observation read 与 session domain subscription；
   - 保留 target/session/journal/lease 单一 ownership；
   - 增加 generic `send` command routing；
   - 增加 session domain subscription 状态。
@@ -263,12 +265,7 @@ Codex 实现时优先按下面边界修改；若实际代码已有更合适的�
 
 #### Browser
 
-- `src/client/port.ts`
-  - 增加 protocol command/event port abstraction 或新增 `src/client/protocol-port.ts`。
-- `src/client/store.ts`
-  - 支持 snapshot bootstrap + event incremental reduce；
-  - 在 protocol 路径稳定前可保留 polling fallback；
-  - 不直接接触 Host/Cordis internals。
+- Browser client 当前不改动；后续迁移仍从 `src/client/port.ts` / `src/client/store.ts` 开始，并保留旧 snapshot RPC 作为过渡。
 - Timeline/Fiber/Profiler views
   - 尽量只消费 store state，不把 transport 逻辑塞进 view。
 
@@ -317,29 +314,22 @@ tests/devtools-protocol-mcp.spec.ts
 
 **重新实现一套独立 target/session/event state machine。** 不采用。当前 `AgentDebugService`、observation journal 和 coordinator 已经提供正确的 identity、bounded retention、gap、wait cancellation、lease ownership；协议层必须复用它们。
 
-## Acceptance criteria
+## Consequences
 
-- 仓库存在 transport-neutral 的 CDP-shaped protocol schema 与 JSON envelope 类型。
-- 第一版提供 `Schema`、`Target`、`Cordis`、`Fiber`、`Profiler` domains，且只描述当前可证明的 runtime facts。
-- Agent 能完成 `discover protocol → list target → attach → send command → wait/read event → query evidence → detach` 全流程。
-- 新增 domain command 不需要新增一个 MCP top-level tool；正常情况下只通过 `cordis_devtools_send` 扩展。
-- event 使用单调 sequence，支持 bounded read/wait、timeout、abort、gap 和 fresh-snapshot recovery。
-- snapshot/event barrier 不会静默遗漏 snapshot 构建期间发生的变化。
-- target replacement 不会让旧 session 自动绑定到新 target。
-- profiler event subscription 与 profiler instrumentation mutation 完全分离。
-- profiler mutation 继续由唯一 `WaterfallExperimentCoordinator` 管理，保留 token/capability/lease/exact-owner cleanup 语义。
-- 现有 focused MCP tools 在迁移期继续可用，且不拥有平行 runtime/debugger 状态。
-- 协议与文档不宣称 Chrome DevTools Frontend、Chromium domains 或 `chrome://inspect` 兼容。
-- `pnpm verify:policy`、`pnpm typecheck`、相关 tests、`pnpm build` 通过。
+实现提供 transport-neutral 的 CDP-shaped protocol schema 与 JSON envelope 类型，包含 `Schema`、`Target`、`Cordis`、`Fiber`、`Profiler` domains，并通过 MCP primitives 完成 discover → attach → send → wait/read → query → detach 全流程。
 
-## Risks
+事件使用单调 sequence，支持 bounded read/wait、timeout、abort、gap 和 pre-snapshot barrier；target replacement 不会自动 rebind 旧 session。Profiler event subscription 与 instrumentation mutation 分离，mutation 继续由唯一 `WaterfallExperimentCoordinator` 管理并受 MCP token/capability/lease/exact-owner cleanup 约束。
 
-**协议层与现有 Agent Debug Core 重复 ownership。** 这是最高风险。实现必须演进/包装现有单一 owner，不能再建 target registry、session registry、journal、trace store 或 coordinator。
+现有 focused MCP tools 保持可用且不拥有平行 runtime/debugger 状态。协议和文档明确不宣称 Chrome DevTools Frontend、Chromium domains、`chrome://inspect` 或 native WebSocket 兼容。`tests/devtools-protocol.spec.ts` 与 `tests/devtools-protocol-mcp.spec.ts` 覆盖核心和真实 MCP 入口；完整 policy/typecheck/test/build 作为交付验证。
 
-**generic `send` 降低可发现性。** 通过强制 `Schema.getDomains`、详细 description、machine-readable params/results schema 和 Skill 的 discover-first workflow 解决；不能把 schema 只写在文档中。
+## Deferred work and safeguards
 
-**snapshot/event race 导致 Agent 得到错误稳定性判断。** 必须实现明确的 pre-snapshot sequence barrier 与 gap recovery，并继续声明 bounded absence 不是 complete history。
+**协议层与现有 Agent Debug Core 重复 ownership。** 这是最高风险。当前实现只包装现有单一 owner，没有新建 target registry、session registry、journal、trace store 或 coordinator。
 
-**Domain `enable` 被误实现成 profiler mutation。** event subscription 与 instrumentation ownership 必须是不同 contract；任何会改变 Cordis dispatch/profiling 行为的命令都走现有 coordinator/approval/security 边界。
+**generic `send` 降低可发现性。** 通过 `Schema.getDomains`、详细 description、machine-readable params/results schema 和 Skill 的 discover-first workflow 约束；schema 不只存在于文档中。
 
-**CDP-shaped 命名被误读为完整 CDP 兼容。** protocol metadata、README/architecture 后续更新必须明确：兼容的是 command/event/session JSON 模型，不是 Chromium semantic domains 或 DevTools Frontend。
+**snapshot/event race 导致 Agent 得到错误稳定性判断。** 当前实现使用 pre-snapshot sequence barrier 与显式 gap recovery，并继续声明 bounded absence 不是 complete history。
+
+**Domain `enable` 被误实现成 profiler mutation。** event subscription 与 instrumentation ownership 是不同 contract；会改变 profiling 行为的命令走现有 coordinator/approval/security 边界。
+
+**CDP-shaped 命名被误读为完整 CDP 兼容。** protocol metadata、README、architecture 和 Skill 均明确：兼容的是 command/event/session JSON 模型，不是 Chromium semantic domains 或 DevTools Frontend。Native WebSocket/discovery transport 和 Browser 增量迁移仍需后续决策。

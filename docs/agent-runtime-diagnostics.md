@@ -30,6 +30,21 @@ is bounded and therefore cannot prove that an event never happened.
 
 ## MCP-first workflow
 
+### Discoverable protocol primitives
+
+Agents that prefer one command router can first call
+`cordis_devtools_get_protocol`, then use
+`cordis_devtools_list_targets` → `cordis_devtools_attach` →
+`cordis_devtools_send`. `cordis_devtools_read_events` and
+`cordis_devtools_wait_for_event` consume the same bounded metadata-only
+observation journal; `cordis_devtools_detach` releases the exact session's
+waiters, cursors, and profiler lease. The protocol domains are `Schema`,
+`Target`, `Cordis`, `Fiber`, and `Profiler`.
+
+The protocol is CDP-shaped only in its discoverable command/event/session
+interaction model. It is not Chrome DevTools Protocol wire compatibility and
+does not expose a native WebSocket endpoint in v0.8.
+
 ### The five Agent Debug session tools
 
 These v0.7 tools add an explicit target/session workflow and are read-only with

@@ -115,11 +115,12 @@ The optional [runtime-debugging Skill](skills/dsh-runtime-debugging/SKILL.md) pr
 | Purpose | Tools |
 | --- | --- |
 | Session lifecycle | `cordis_list_debug_targets`, `cordis_attach_debug_session`, `cordis_debug_snapshot`, `cordis_wait_for_runtime_change`, `cordis_detach_debug_session` |
+| Discoverable protocol | `cordis_devtools_get_protocol`, `cordis_devtools_list_targets`, `cordis_devtools_attach`, `cordis_devtools_send`, `cordis_devtools_read_events`, `cordis_devtools_wait_for_event`, `cordis_devtools_detach` |
 | Focused runtime inspection | `cordis_runtime_summary`, `cordis_inspect_event`, `cordis_inspect_fiber`, `cordis_search_dispatches`, `cordis_profiler_traces` |
 | Runtime verification | `cordis_capture_checkpoint`, `cordis_compare_current` |
 | Waterfall experiment | `cordis_waterfall_experiment_status`, `cordis_start_waterfall_experiment`, `cordis_stop_waterfall_experiment` |
 
-Sessions, snapshots, waits, focused diagnostics, and verification are read-only paths.
+Sessions, snapshots, waits, focused diagnostics, and verification are read-only paths. The generic protocol sender can route profiler mutation only when bearer authentication and the explicit experiment capability are both enabled.
 
 Waterfall experiment tools are exposed when the required authentication and capability settings are enabled.
 
