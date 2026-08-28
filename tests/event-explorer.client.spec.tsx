@@ -227,6 +227,19 @@ describe('EventExplorerAction', () => {
     expect(panel?.textContent).not.toContain('duration')
     expect(panel?.textContent).not.toContain('outcome')
 
+    expect([...container.querySelectorAll<HTMLButtonElement>('[data-testid="cordis-devtools-mode-filters"] button')]
+      .map(button => button.textContent))
+      .toEqual(['all', 'bail', 'emit', 'parallel', 'serial', 'waterfall'])
+    const parallelFilter = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="cordis-devtools-mode-filters"] button')]
+      .find(button => button.textContent === 'parallel')
+    expect(parallelFilter).not.toBeUndefined()
+    await act(async () => { parallelFilter?.click() })
+    expect(container.querySelectorAll('[data-dispatch-id]')).toHaveLength(0)
+    expect(panel?.textContent).toContain('No matching dispatches.')
+    const allTimelineFilter = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="cordis-devtools-mode-filters"] button')]
+      .find(button => button.textContent === 'all')
+    await act(async () => { allTimelineFilter?.click() })
+
     const missingRow = container.querySelector<HTMLElement>('[data-dispatch-id="4"]')
     await act(async () => { missingRow?.querySelector<HTMLElement>('[data-disclosure-row]')?.click() })
     expect(missingRow?.textContent).toContain('plugin-gone')

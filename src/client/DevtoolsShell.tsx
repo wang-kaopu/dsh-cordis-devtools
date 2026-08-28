@@ -34,6 +34,8 @@ export interface EventExplorerActionProps {
 
 type DevtoolsView = 'events' | 'timeline' | 'fibers' | 'profiler'
 
+const STANDARD_DISPATCH_MODES = ['emit', 'parallel', 'serial', 'bail', 'waterfall'] as const
+
 export function EventExplorerAction({ wide, store, profilerStore }: EventExplorerActionProps) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const profilerState = useSyncExternalStore(
@@ -124,7 +126,10 @@ export function EventExplorerAction({ wide, store, profilerStore }: EventExplore
     .filter((listener): listener is ListenerSnapshot => listener !== undefined) ?? []
 
   const modes = useMemo(
-    () => [...new Set(dispatches.map(record => String(record.mode)))].sort(),
+    () => [...new Set([
+      ...STANDARD_DISPATCH_MODES,
+      ...dispatches.map(record => String(record.mode)),
+    ])].sort(),
     [dispatches],
   )
   const fiberStates = useMemo(
