@@ -40,6 +40,7 @@ export interface DispatchRecord {
   event: string
   argCount: number
   registeredListeners: number
+  /** Explicit Cordis dispatch `thisArg` projected to a Fiber when available; not the caller/producer Fiber. */
   thisFiber: FiberSnapshot | null
 }
 

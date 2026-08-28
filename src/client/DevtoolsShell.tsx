@@ -215,7 +215,7 @@ export function EventExplorerAction({ wide, store, profilerStore }: EventExplore
   const searchPlaceholder = view === 'events'
     ? 'Search events…'
     : view === 'timeline'
-      ? 'Search event or dispatch context…'
+      ? 'Search event or dispatch scope…'
       : 'Search fiber name or uid…'
   const refreshLabel = view === 'profiler' ? 'Refresh profiler snapshot' : 'Refresh runtime snapshot'
   const activeError = view === 'profiler' ? profilerState.error : state.error
