@@ -14,13 +14,13 @@ That leaves a clear **evidence gap**: Did DSH really load the change? Was an Eve
 
 DSH DevTools exposes that runtime information to the Agent. The Agent can inspect the current state before making a change, wait for a target behavior during reproduction, and compare the runtime before and after reload.
 
-| Debugging question                                 | Evidence from DevTools                                            |
-| -------------------------------------------------- | ----------------------------------------------------------------- |
-| What changed in the runtime after reload?          | checkpoint + semantic topology comparison                         |
-| Why does an Event appear to run twice?             | live listener registrations, multiplicity, and owning Fibers      |
-| Is an old plugin instance still alive?             | current live Fiber topology                                       |
-| Did the target behavior occur during reproduction? | recent dispatch records and filtered runtime waits                |
-| What happened inside a waterfall chain?            | profiler traces with listener spans, timing, and `next()` records |
+| Debugging question | Evidence from DevTools |
+| --- | --- |
+| What changed in the runtime after reload? | checkpoint + semantic topology comparison |
+| Why does an Event appear to run twice? | live listener registrations, multiplicity, and owning Fibers |
+| Is an old plugin instance still alive? | current live Fiber topology |
+| Did the target behavior occur during reproduction? | recent dispatch records and filtered runtime waits |
+| What happened inside a waterfall chain? | profiler traces with listener spans, timing, and `next()` records |
 
 A typical Agent debugging loop:
 
@@ -44,37 +44,41 @@ Code changes and reloads continue through the normal development workflow. DSH D
 
 ### 1. Add DevTools to a DSH Web profile
 
-From this repository or a built local package checkout:
+Install the `v0.8.0` release directly from GitHub:
 
 ```bash
-pnpm install
-pnpm build
-dsh plugin --profile web add ./
+dsh plugin --profile web add github:wang-kaopu/dsh-cordis-devtools#v0.8.0
 ```
 
 You can then open **Cordis DevTools** from the DSH Web sidebar footer and inspect the current runtime directly.
 
-### 2. Connect Codex or another MCP host
-
-Configure the target DSH profile and register the package-local stdio bridge:
+For repository development, clone the source and use the local package instead:
 
 ```bash
-dsh-cordis-debug setup --profile web --agent codex
+pnpm install --frozen-lockfile
+pnpm build
+dsh plugin --profile web add ./
+```
+
+### 2. Connect Codex or another MCP host
+
+Configure the target DSH profile and register the profile-local stdio bridge:
+
+```bash
+dsh plugin --profile web exec dsh-cordis-debug setup --profile web --agent codex
 ```
 
 Reload DSH through your normal development workflow, then check the connection:
 
 ```bash
-dsh-cordis-debug doctor --profile web
+dsh plugin --profile web exec dsh-cordis-debug doctor --profile web
 ```
 
-`setup` creates an owner-only token file for the selected profile, enables the local loopback MCP endpoint, and registers `dsh-cordis-devtools-mcp` with Codex.
+`setup` creates an owner-only token file for the selected profile, enables the local loopback MCP endpoint, and registers the DevTools bridge with Codex.
 
 The stdio bridge reads the credential locally and forwards MCP requests to the running DSH process. The token does not need to enter prompts, tool arguments, logs, or diagnostic results.
 
 For other MCP-capable hosts, use the bridge command printed by `setup` or see the [MCP connection guide](docs/agent-runtime-diagnostics.md#connecting-an-mcp-capable-agent).
-
-> The package-local binary is currently supported directly. Using a local checkout does not imply that an npm package, Git tag, or GitHub Release has been published.
 
 ### 3. Let the Agent inspect, change, and verify
 
@@ -108,12 +112,12 @@ The optional [runtime-debugging Skill](skills/dsh-runtime-debugging/SKILL.md) pr
 
 ### Agent tools
 
-| Purpose                    | Tools                                                                                                                                                |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session lifecycle          | `cordis_list_debug_targets`, `cordis_attach_debug_session`, `cordis_debug_snapshot`, `cordis_wait_for_runtime_change`, `cordis_detach_debug_session` |
-| Focused runtime inspection | `cordis_runtime_summary`, `cordis_inspect_event`, `cordis_inspect_fiber`, `cordis_search_dispatches`, `cordis_profiler_traces`                       |
-| Runtime verification       | `cordis_capture_checkpoint`, `cordis_compare_current`                                                                                                |
-| Waterfall experiment       | `cordis_waterfall_experiment_status`, `cordis_start_waterfall_experiment`, `cordis_stop_waterfall_experiment`                                        |
+| Purpose | Tools |
+| --- | --- |
+| Session lifecycle | `cordis_list_debug_targets`, `cordis_attach_debug_session`, `cordis_debug_snapshot`, `cordis_wait_for_runtime_change`, `cordis_detach_debug_session` |
+| Focused runtime inspection | `cordis_runtime_summary`, `cordis_inspect_event`, `cordis_inspect_fiber`, `cordis_search_dispatches`, `cordis_profiler_traces` |
+| Runtime verification | `cordis_capture_checkpoint`, `cordis_compare_current` |
+| Waterfall experiment | `cordis_waterfall_experiment_status`, `cordis_start_waterfall_experiment`, `cordis_stop_waterfall_experiment` |
 
 Sessions, snapshots, waits, focused diagnostics, and verification are read-only paths.
 
@@ -123,10 +127,10 @@ Waterfall experiment tools are exposed when the required authentication and capa
 
 The DSH Web sidebar provides four views:
 
-* **Events** — live Event registrations, listener order, ownership, and Event → Fiber navigation;
-* **Timeline** — recent observer dispatch metadata;
-* **Fibers** — live Fiber topology, ownership, Effects, and recent dispatch context;
-* **Profiler** — waterfall traces and explicit profiling instrumentation controls.
+- **Events** — live Event registrations, listener order, ownership, and Event → Fiber navigation;
+- **Timeline** — recent observer dispatch metadata;
+- **Fibers** — live Fiber topology, ownership, Effects, and recent dispatch context;
+- **Profiler** — waterfall traces and explicit profiling instrumentation controls.
 
 The Human UI and Agent interfaces use the same Host runtime state.
 
@@ -135,10 +139,10 @@ The Human UI and Agent interfaces use the same Host runtime state.
 The same debugging surface is also available through the `dsh-cordis-debug` CLI:
 
 ```bash
-dsh-cordis-debug targets
-dsh-cordis-debug snapshot
-dsh-cordis-debug checkpoint --output checkpoint.json
-dsh-cordis-debug compare --baseline checkpoint.json
+dsh plugin --profile web exec dsh-cordis-debug targets
+dsh plugin --profile web exec dsh-cordis-debug snapshot
+dsh plugin --profile web exec dsh-cordis-debug checkpoint --output checkpoint.json
+dsh plugin --profile web exec dsh-cordis-debug compare --baseline checkpoint.json
 ```
 
 See the [CLI reference](docs/agent-runtime-diagnostics.md#json-cli) for the complete command set.
@@ -217,14 +221,14 @@ The default observer path reads the current Cordis state and keeps a recent runt
 
 It provides:
 
-* live Event and listener registrations;
-* listener order, registration metadata, and owning Fiber;
-* current live Fiber topology;
-* recent dispatch metadata;
-* runtime snapshots;
-* focused Event / Fiber / dispatch / trace queries;
-* checkpoint capture and before/after comparison;
-* a runtime change journal that Agents can wait on.
+- live Event and listener registrations;
+- listener order, registration metadata, and owning Fiber;
+- current live Fiber topology;
+- recent dispatch metadata;
+- runtime snapshots;
+- focused Event / Fiber / dispatch / trace queries;
+- checkpoint capture and before/after comparison;
+- a runtime change journal that Agents can wait on.
 
 Observer collection is limited to debugging metadata. It does not include Event arguments, return values, prompts, tool results, file contents, plugin configuration, tokens, or credentials.
 
@@ -234,9 +238,9 @@ Dispatches, profiler traces, and runtime change observations all have explicit r
 
 Query results include the corresponding window state:
 
-* `timeout`: no matching change was observed in the current window;
-* `gap`: the current cursor has fallen behind the retained window and a fresh snapshot is required;
-* checkpoint comparison: reports semantic changes between two runtime states.
+- `timeout`: no matching change was observed in the current window;
+- `gap`: the current cursor has fallen behind the retained window and a fresh snapshot is required;
+- checkpoint comparison: reports semantic changes between two runtime states.
 
 For example:
 
@@ -275,16 +279,16 @@ The profiler records profiling metadata such as Event identity, listener ownersh
 
 ## Documentation
 
-* [Architecture and invariants](docs/architecture.md)
-* [Agent runtime diagnostics guide](docs/agent-runtime-diagnostics.md)
-* [Controlled runtime experiments](docs/v0.6-controlled-runtime-experiments.md)
-* [Runtime verification design](docs/v0.5-runtime-verification.md)
-* [Development workflow](docs/development-workflow.md)
+- [Architecture and invariants](docs/architecture.md)
+- [Agent runtime diagnostics guide](docs/agent-runtime-diagnostics.md)
+- [Controlled runtime experiments](docs/v0.6-controlled-runtime-experiments.md)
+- [Runtime verification design](docs/v0.5-runtime-verification.md)
+- [Development workflow](docs/development-workflow.md)
 
 ## Development
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm verify:policy
 pnpm typecheck
 pnpm test

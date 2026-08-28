@@ -77,7 +77,7 @@ describe('profile bootstrap CLI', () => {
     expect(patch).not.toContain('old-inline-secret')
     expect(spawned).toEqual([{
       command: 'codex',
-      args: ['mcp', 'add', 'dsh-cordis-devtools', '--', 'dsh-cordis-devtools-mcp', '--endpoint', 'http://127.0.0.1:43127/mcp', '--token-file', TOKEN],
+      args: ['mcp', 'add', 'dsh-cordis-devtools', '--', 'dsh', 'plugin', '--profile', 'web', 'exec', 'dsh-cordis-devtools-mcp', '--endpoint', 'http://127.0.0.1:43127/mcp', '--token-file', TOKEN],
     }])
     expect(JSON.stringify(spawned)).not.toContain('generated-secret')
   })
