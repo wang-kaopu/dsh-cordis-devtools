@@ -26,6 +26,9 @@ export const PROTOCOL_WEBSOCKET_SLOW_CONSUMER_CLOSE_CODE = 4001
 /** Stable close code used when the attached target incarnation is stale. */
 export const PROTOCOL_WEBSOCKET_TARGET_STALE_CLOSE_CODE = 4002
 
+/** Stable close code used when the retained event journal can no longer provide continuity. */
+export const PROTOCOL_WEBSOCKET_EVENT_GAP_CLOSE_CODE = 4003
+
 const SERVER_VERSION = '0.8.0'
 const DEFAULT_MAX_QUEUED_MESSAGES = 256
 const DEFAULT_MAX_QUEUED_BYTES = 4 * 1024 * 1024
@@ -33,6 +36,7 @@ const DEFAULT_MAX_INBOUND_MESSAGE_BYTES = 1024 * 1024
 const SERVER_SHUTDOWN_CLOSE_CODE = 1001
 const SLOW_CONSUMER_CLOSE_REASON = 'outbound queue limit exceeded'
 const TARGET_STALE_CLOSE_REASON = 'attached target is stale'
+const EVENT_GAP_CLOSE_REASON = 'protocol event journal gap'
 
 /** Options for the independent loopback WebSocket protocol server. */
 export interface ProtocolWebSocketOptions {
@@ -308,6 +312,10 @@ function createConnection(
       sendError(request.id, request.error.code, request.error.message)
       return
     }
+    if (request.method === 'Target.attachToTarget') {
+      sendError(request.id, 'capability_not_supported', 'Target-scoped WebSocket connections are already attached to one exact target session', request.sessionId)
+      return
+    }
     if (!acceptsSession(request)) {
       sendError(request.id, 'session_not_found', 'Agent Debug session was not found or is not owned by this connection', request.sessionId)
       return
@@ -327,7 +335,7 @@ function createConnection(
 
   function acceptsSession(request: DevtoolsProtocolCommandRequest): boolean {
     if (session === null) return false
-    const sessionOptional = request.method === 'Schema.getDomains' || request.method === 'Target.getTargets' || request.method === 'Target.attachToTarget'
+    const sessionOptional = request.method === 'Schema.getDomains' || request.method === 'Target.getTargets'
     if (sessionOptional) return request.sessionId === undefined || request.sessionId === session.debugSessionId
     return request.sessionId === session.debugSessionId
   }
@@ -346,7 +354,8 @@ function createConnection(
           return
         }
       } else if (result.outcome === 'gap') {
-        afterSequence = result.window.newestSequence ?? afterSequence
+        closeForServer(PROTOCOL_WEBSOCKET_EVENT_GAP_CLOSE_CODE, EVENT_GAP_CLOSE_REASON)
+        return
       }
     }
   }
