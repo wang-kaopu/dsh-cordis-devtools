@@ -19,9 +19,17 @@ interface RuntimeHarness {
   protocol: AgentDebugProtocol
 }
 
+interface SocketState {
+  messages: Array<Record<string, any>>
+  messageWaiters: Array<(value: Record<string, any>) => void>
+  close: { code: number; reason: string } | null
+  closeWaiters: Array<(value: { code: number; reason: string }) => void>
+}
+
 const handles: ProtocolWebSocketHandle[] = []
 const runtimes: RuntimeHarness[] = []
 const sockets: WebSocket[] = []
+const socketStates = new WeakMap<WebSocket, SocketState>()
 
 function createRuntime(capacity = 8): RuntimeHarness {
   const notifications = new RuntimeNotificationSource()
@@ -61,6 +69,19 @@ async function start(runtime: RuntimeHarness): Promise<ProtocolWebSocketHandle> 
 function connect(url: string): Promise<WebSocket> {
   const socket = new WebSocket(url)
   sockets.push(socket)
+  const state: SocketState = { messages: [], messageWaiters: [], close: null, closeWaiters: [] }
+  socketStates.set(socket, state)
+  socket.on('message', data => {
+    const value = JSON.parse(data.toString()) as Record<string, any>
+    const waiter = state.messageWaiters.shift()
+    if (waiter === undefined) state.messages.push(value)
+    else waiter(value)
+  })
+  socket.on('close', (code, reason) => {
+    const value = { code, reason: reason.toString() }
+    state.close = value
+    for (const waiter of state.closeWaiters.splice(0)) waiter(value)
+  })
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('WebSocket open timed out')), 2_000)
     socket.once('open', () => { clearTimeout(timer); resolve(socket) })
@@ -69,18 +90,20 @@ function connect(url: string): Promise<WebSocket> {
 }
 
 function nextMessage(socket: WebSocket): Promise<Record<string, any>> {
+  const state = socketStates.get(socket)
+  if (state === undefined) return Promise.reject(new Error('missing socket state'))
+  if (state.messages.length > 0) return Promise.resolve(state.messages.shift()!)
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('WebSocket message timed out')), 2_000)
-    socket.once('message', data => {
-      clearTimeout(timer)
-      resolve(JSON.parse(data.toString()) as Record<string, any>)
-    })
-    socket.once('error', error => { clearTimeout(timer); reject(error) })
+    state.messageWaiters.push(value => { clearTimeout(timer); resolve(value) })
   })
 }
 
 function nextClose(socket: WebSocket): Promise<{ code: number; reason: string }> {
-  return new Promise(resolve => socket.once('close', (code, reason) => resolve({ code, reason: reason.toString() })))
+  const state = socketStates.get(socket)
+  if (state === undefined) return Promise.reject(new Error('missing socket state'))
+  if (state.close !== null) return Promise.resolve(state.close)
+  return new Promise(resolve => state.closeWaiters.push(resolve))
 }
 
 afterEach(async () => {
@@ -123,13 +146,12 @@ describe('protocol WebSocket session and recovery semantics', () => {
     socket.send(JSON.stringify({ id: 1, method: 'Cordis.enable', sessionId }))
     expect(await nextMessage(socket)).toMatchObject({ id: 1, result: { enabled: true }, sessionId })
 
-    const closed = nextClose(socket)
     runtime.notifications.publish({ type: 'dispatch-observed', dispatchId: 1, event: 'one', mode: 'emit', argCount: 0, registeredListeners: 0 })
     runtime.notifications.publish({ type: 'dispatch-observed', dispatchId: 2, event: 'two', mode: 'emit', argCount: 0, registeredListeners: 0 })
     runtime.notifications.publish({ type: 'dispatch-observed', dispatchId: 3, event: 'three', mode: 'emit', argCount: 0, registeredListeners: 0 })
     runtime.notifications.publish({ type: 'dispatch-observed', dispatchId: 4, event: 'four', mode: 'emit', argCount: 0, registeredListeners: 0 })
 
-    expect(await closed).toEqual({
+    expect(await nextClose(socket)).toEqual({
       code: PROTOCOL_WEBSOCKET_EVENT_GAP_CLOSE_CODE,
       reason: 'protocol event journal gap',
     })
