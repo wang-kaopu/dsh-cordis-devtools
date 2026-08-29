@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto'
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Context } from '@deepseek-ai/cordis'
@@ -46,6 +45,7 @@ import type {
   AgentDebugWaitForRuntimeChangeResult,
 } from '../shared/agent-debug.js'
 import type { RuntimeDiagnosticsQuery } from './diagnostics.js'
+import { isAuthorized } from './auth.js'
 
 export const DEFAULT_MCP_PORT = 43127
 export const MCP_PATH = '/mcp'
@@ -619,17 +619,6 @@ function normalizeToken(token: string | undefined): string | undefined {
   if (token === undefined) return undefined
   if (token.trim() === '') throw new Error('dsh-cordis-devtools: MCP bearer token must not be empty')
   return token
-}
-
-function isAuthorized(req: IncomingMessage, token: string | undefined): boolean {
-  if (token === undefined) return true
-  const header = req.headers.authorization
-  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return false
-  const presented = header.slice('Bearer '.length)
-  const expectedBytes = Buffer.from(token)
-  const presentedBytes = Buffer.from(presented)
-  if (expectedBytes.byteLength !== presentedBytes.byteLength) return false
-  return timingSafeEqual(expectedBytes, presentedBytes)
 }
 
 function requireExperimentControl(options: NormalizedMcpOptions): McpWaterfallExperimentControl {

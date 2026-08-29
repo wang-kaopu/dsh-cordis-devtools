@@ -1,6 +1,7 @@
 import type {
   AgentDebugObservation,
   AgentDebugObservationWindow,
+  AgentDebugTarget,
   AgentDebugSessionDetail,
   AgentDebugSessionId,
 } from './agent-debug.js'
@@ -41,6 +42,7 @@ export const DEVTOOLS_PROTOCOL_METHODS = [
   'Cordis.enable',
   'Cordis.disable',
   'Cordis.getSnapshot',
+  'Cordis.readEvents',
   'Cordis.getEvent',
   'Cordis.getListeners',
   'Cordis.searchDispatches',
@@ -56,6 +58,7 @@ export const DEVTOOLS_PROTOCOL_METHODS = [
 
 /** Events exposed by the first DSH Agent Debug protocol revision. */
 export const DEVTOOLS_PROTOCOL_EVENTS = [
+  'Target.attachedToTarget',
   'Target.targetDestroyed',
   'Cordis.dispatchObserved',
   'Cordis.topologyInvalidated',
@@ -158,10 +161,21 @@ export interface DevtoolsProtocolErrorResponse {
 export type DevtoolsProtocolResponse<T = unknown> = DevtoolsProtocolSuccessResponse<T> | DevtoolsProtocolErrorResponse
 
 /** One event delivered to a subscribed debug session. */
-export interface DevtoolsProtocolEvent {
+export interface DevtoolsProtocolEvent<TParams = Readonly<Record<string, unknown>>> {
   method: DevtoolsProtocolEventName
   sessionId: AgentDebugSessionId
-  params: Readonly<Record<string, unknown>>
+  params: TParams
+}
+
+/** Parameters sent with the automatic attach handshake event. */
+export interface DevtoolsProtocolTargetAttachedToTargetEventParams {
+  target: AgentDebugTarget
+  session: AgentDebugSessionDetail
+}
+
+/** Automatic attach handshake event for a target-scoped adapter connection. */
+export type DevtoolsProtocolTargetAttachedToTargetEvent = DevtoolsProtocolEvent<DevtoolsProtocolTargetAttachedToTargetEventParams> & {
+  method: 'Target.attachedToTarget'
 }
 
 /** Filter for reading retained protocol events. */
@@ -247,7 +261,10 @@ export const DEVTOOLS_PROTOCOL_DESCRIPTION: DevtoolsProtocolDescription = {
         command('Target.attachToTarget', 'Attach to one exact active target.', object({ targetId }, ['targetId']), anyObject),
         command('Target.detachFromTarget', 'Detach one exact debug session.', object(), anyObject, true),
       ],
-      events: [event('Target.targetDestroyed', 'The target incarnation can no longer receive requests.', object({ sequence: number(), observedAt: number(), targetId, targetEpoch: number() }))],
+      events: [
+        event('Target.attachedToTarget', 'A target-scoped connection was automatically attached to the exact target incarnation.', object({ target: anyObject, session: anyObject }, ['target', 'session']), false),
+        event('Target.targetDestroyed', 'The target incarnation can no longer receive requests.', object({ sequence: number(), observedAt: number(), targetId, targetEpoch: number() })),
+      ],
     },
     {
       name: 'Cordis',
@@ -256,6 +273,7 @@ export const DEVTOOLS_PROTOCOL_DESCRIPTION: DevtoolsProtocolDescription = {
         command('Cordis.enable', 'Enable Cordis observation events for this session.', object(), anyObject, true),
         command('Cordis.disable', 'Disable Cordis observation events for this session.', object(), anyObject, true),
         command('Cordis.getSnapshot', 'Return a bounded authoritative runtime snapshot.', snapshotInput, anyObject, true),
+        command('Cordis.readEvents', 'Read retained metadata-only protocol events after a session cursor.', object({ afterSequence: number(), method: string(), event: string() }), anyObject, true),
         command('Cordis.getEvent', 'Inspect one exact live Event and its listeners.', object({ name: string('Exact live event name.') }, ['name']), anyObject, true),
         command('Cordis.getListeners', 'Inspect listeners for one exact live Event.', object({ name: string('Exact live event name.') }, ['name']), anyObject, true),
         command('Cordis.searchDispatches', 'Search the retained dispatch window newest-first.', object({ event: string(), fiberUid: number(), mode: string(), limit: number() }), anyObject, true),

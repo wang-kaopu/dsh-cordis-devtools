@@ -76,8 +76,10 @@ The generic protocol primitives are:
 They are an MCP adapter over the same Agent Debug Core. Use the returned
 schema to discover command names, keep the exact `sessionId` and
 `targetEpoch`, and recover from `gap` with a fresh `Cordis.getSnapshot`. The
-protocol is CDP-shaped in message organization only; it is not Chrome CDP and
-does not provide a native WebSocket endpoint.
+protocol is CDP-shaped in message organization only; it is not Chrome CDP.
+An optional native WebSocket endpoint exists only when the Host explicitly
+enables `protocol.websocket`; it is loopback-only and shares the bounded Core
+journal.
 
 The session workflow uses these tools exactly:
 

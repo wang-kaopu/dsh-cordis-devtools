@@ -61,6 +61,8 @@ describe('MCP protocol primitives', () => {
     const snapshot = await client.callTool({ name: 'cordis_devtools_send', arguments: { id: 42, sessionId, method: 'Cordis.getSnapshot', params: { sections: ['summary'] } } })
     expect(snapshot.structuredContent).toMatchObject({ id: 42, result: { eventCursor: 0, session: { debugSessionId: sessionId } }, sessionId })
     runtime.notifications.publish({ type: 'dispatch-observed', dispatchId: 11, event: 'runtime.ready', mode: 'emit', argCount: 0, registeredListeners: 1 })
+    const wireEvents = await client.callTool({ name: 'cordis_devtools_send', arguments: { id: 43, sessionId, method: 'Cordis.readEvents', params: { afterSequence: 0, method: 'Cordis.dispatchObserved' } } })
+    expect(wireEvents.structuredContent).toMatchObject({ id: 43, result: { outcome: 'ok', events: [{ method: 'Cordis.dispatchObserved', params: { sequence: 1, event: 'runtime.ready' } }] }, sessionId })
     const events = await client.callTool({ name: 'cordis_devtools_read_events', arguments: { sessionId, afterSequence: 0, method: 'Cordis.dispatchObserved' } })
     expect(events.structuredContent).toMatchObject({ outcome: 'ok', events: [{ method: 'Cordis.dispatchObserved', params: { sequence: 1, event: 'runtime.ready' } }] })
     expect((await client.callTool({ name: 'cordis_devtools_detach', arguments: { sessionId } })).structuredContent).toMatchObject({ debugSessionId: sessionId, status: 'detached' })

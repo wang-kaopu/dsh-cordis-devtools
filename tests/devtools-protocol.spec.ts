@@ -6,6 +6,7 @@ import { AgentDebugWaitCancelledError } from '../src/host/agent-debug/observatio
 import { RuntimeDiagnosticsQuery } from '../src/host/diagnostics.js'
 import type { WaterfallExperimentStartResult, WaterfallExperimentStopResult } from '../src/shared/experiments.js'
 import type { WaterfallProfilerSnapshot } from '../src/shared/trace.js'
+import type { DevtoolsProtocolTargetAttachedToTargetEvent } from '../src/shared/devtools-protocol.js'
 import type { DevtoolsSnapshot } from '../src/shared/types.js'
 
 function observerSnapshot(): DevtoolsSnapshot {
@@ -44,15 +45,26 @@ describe('DSH DevTools protocol core', () => {
     expect(schema).toMatchObject({ id: 17, result: { name: 'dsh-devtools-for-agents', version: 1 } })
     expect(protocol.getProtocol().domains.map(domain => domain.name)).toEqual(['Schema', 'Target', 'Cordis', 'Fiber', 'Profiler'])
     expect(protocol.getProtocol().domains.flatMap(domain => domain.commands.map(command => command.name))).toContain('Cordis.getSnapshot')
+    expect(protocol.getProtocol().domains.find(domain => domain.name === 'Target')?.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Target.attachedToTarget', sessionRequired: false, params: expect.objectContaining({ type: 'object', required: ['target', 'session'] }) }),
+    ]))
+    expect(protocol.getProtocol().domains.find(domain => domain.name === 'Cordis')?.commands).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Cordis.readEvents', sessionRequired: true }),
+    ]))
 
     const target = protocol.send({ id: 18, method: 'Target.getTargets' })
     expect(target).toMatchObject({ id: 18, result: { targets: [{ type: 'cordis-runtime', targetEpoch: 1 }] } })
     const targetId = service.listTargets()[0].targetId
     const attached = protocol.send({ id: 19, method: 'Target.attachToTarget', params: { targetId } })
     expect(attached).toMatchObject({ id: 19, result: { targetId, targetEpoch: 1 } })
-    const sessionId = (attached as { result: { debugSessionId: string } }).result.debugSessionId
+    const attachedSession = (attached as { result: DevtoolsProtocolTargetAttachedToTargetEvent['params']['session'] }).result
+    const sessionId = attachedSession.debugSessionId
+    const attachedEvent: DevtoolsProtocolTargetAttachedToTargetEvent = { method: 'Target.attachedToTarget', sessionId, params: { target: service.listTargets()[0], session: attachedSession } }
+    expect(attachedEvent).toMatchObject({ method: 'Target.attachedToTarget', sessionId, params: { target: { targetId }, session: { debugSessionId: sessionId } } })
     expect(protocol.send({ id: 20, method: 'Cordis.getSnapshot', sessionId })).toMatchObject({ id: 20, result: { eventCursor: 0, session: { debugSessionId: sessionId } }, sessionId })
-    expect(protocol.send({ id: 21, method: 'unknown.method', sessionId })).toMatchObject({ id: 21, error: { code: 'unknown_method' }, sessionId })
+    expect(protocol.send({ id: 21, method: 'Cordis.readEvents', sessionId, params: { afterSequence: 0 } })).toMatchObject({ id: 21, result: { outcome: 'ok', events: [], session: { debugSessionId: sessionId } }, sessionId })
+    expect(protocol.send({ id: 22, method: 'Cordis.readEvents', params: { afterSequence: 0 } })).toMatchObject({ id: 22, error: { code: 'invalid_params' } })
+    expect(protocol.send({ id: 23, method: 'unknown.method', sessionId })).toMatchObject({ id: 23, error: { code: 'unknown_method' }, sessionId })
     service.dispose()
   })
 
@@ -97,7 +109,7 @@ describe('DSH DevTools protocol core', () => {
     g.service.dispose()
 
     h.service.replaceTarget()
-    expect(h.protocol.send({ id: 5, method: 'Cordis.getSnapshot', sessionId })).toMatchObject({ id: 5, error: { code: 'session_stale' }, sessionId })
+    expect(h.protocol.send({ id: 5, method: 'Cordis.readEvents', sessionId, params: { afterSequence: 0 } })).toMatchObject({ id: 5, error: { code: 'session_stale' }, sessionId })
     h.service.dispose()
   })
 

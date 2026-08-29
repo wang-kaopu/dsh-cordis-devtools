@@ -21,3 +21,10 @@ The collector also names its local projection `dispatchScope` and documents the 
 The existing Host/MCP snapshot contract remains wire-compatible, while the Web UI no longer suggests that a normal `null` scope is an instrumentation failure.
 
 This change does not add producer attribution. If producer Fiber, plugin, or callsite attribution is required later, it needs separate instrumentation and a separately named field such as `origin` or `producerFiber`; it must not be inferred from Cordis `thisArg`.
+
+## Alternatives considered
+
+Removing `thisFiber` from the serialized contract was rejected because it would
+break existing snapshots and consumers. Treating `thisArg` as the producer
+Fiber was rejected because Cordis does not expose that fact and the resulting
+diagnostic would be invented rather than observed.

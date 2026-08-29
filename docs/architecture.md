@@ -61,8 +61,8 @@ expression evaluation, payload capture, or a complete audit log.
        │ authenticated loopback HTTP MCP
        └──────────────────────────────► MCP (primary)
 
-                 future native DSH protocol / IDE client
-                 raw WebSocket/CDP wire compatibility deferred
+                 optional native DSH protocol / IDE client
+                 loopback CDP-shaped WebSocket adapter
 ~~~
 
 The Host seams are isolated in
@@ -314,18 +314,30 @@ Skill, plugin loading, and MCP behavior; source imports alone are insufficient.
 npm publication, tags/releases, and remote deployment are release-process
 boundaries, not implied by a local build or this document.
 
-## Deferred native transport
+## Optional native WebSocket transport
 
-The shared DSH Debug Protocol schema and command/event semantics now ship
-through MCP primitives. v0.8 still does not add a WebSocket listener,
-/json/list, /json/version, raw event push, or CDP wire compatibility. It does
-not claim an MCP-native Agent can consume an arbitrary custom WebSocket
-without a client adapter.
+The shared DSH Debug Protocol schema and command/event semantics ship through
+MCP primitives and an optional native transport. When
+`protocol.websocket.enabled` is true, the Host starts an independent
+loopback-only listener (default `127.0.0.1:43128`) with `/json/version`,
+`/json/list`, `/json/protocol`, and target-scoped
+`/devtools/page/{targetId}` WebSocket connections. Connections automatically
+attach one exact target incarnation and receive a `Target.attachedToTarget`
+handshake containing the debug session id.
 
-A native protocol needs a separate decision for transport, discovery,
-authentication, concurrent sessions, notification/backpressure semantics,
-versioning, and real-client tests. Add it only for a concrete non-MCP consumer;
-MCP remains the primary Agent product surface.
+The adapter is a wire boundary over the existing Agent Debug Protocol Core. It
+uses the same bounded journal for `Cordis.readEvents` replay/gap recovery and
+one Core waiter for live event delivery; it does not subscribe to Cordis
+internals or own a second target/session/journal/coordinator. Cordis and
+Profiler event delivery starts disabled and must be explicitly enabled on the
+connection. Outbound messages have bounded count and byte limits; a slow
+consumer is closed explicitly so a client can recover through sequence/gap or
+snapshot semantics. Bearer authentication is accepted through the shared
+Host policy and long-lived tokens are never placed in discovery URLs.
+
+The endpoint is CDP-shaped only in message organization. It does not claim
+Chrome DevTools Frontend, Chromium domains, `chrome://inspect`, or remote/LAN
+debugging compatibility. MCP remains the primary Agent product surface.
 
 ## Related decisions
 

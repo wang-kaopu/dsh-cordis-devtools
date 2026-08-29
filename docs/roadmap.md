@@ -10,7 +10,10 @@ The repository version is currently `0.8.0`; the v0.8 Local Agent Bridge & Boots
 
 v0.8 adds the package-local `dsh-cordis-devtools-mcp` stdio bridge, profile-scoped `setup`, secret-free `doctor`, owner-only `mcp.tokenFile`, and `rotate-token` with explicit normal DSH reload. The bridge forwards the v0.7 MCP tools and does not automatically retry or replay calls. v0.7's MCP-first target/session/snapshot/wait workflow, CLI, and packaged Skill remain the Agent Debug foundation.
 
-Raw CDP-compatible WebSocket transport, automatic reload/orchestration, breakpoints, pause/step, expression evaluation, arbitrary mutation, and payload capture remain outside this feature line.
+The optional loopback CDP-shaped WebSocket transport is available behind
+`protocol.websocket.enabled`; Chrome CDP compatibility, automatic
+reload/orchestration, breakpoints, pause/step, expression evaluation,
+arbitrary mutation, and payload capture remain outside this feature line.
 
 ## Completed milestone — v0.7 DSH DevTools for Agents
 

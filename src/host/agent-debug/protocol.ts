@@ -7,6 +7,7 @@ import type {
 } from '../../shared/agent-debug.js'
 import {
   DEVTOOLS_PROTOCOL_DESCRIPTION,
+  isProtocolEvent,
   isProtocolMethod,
   observationTypeForProtocolEvent,
   projectDevtoolsProtocolEvent,
@@ -74,11 +75,15 @@ export class AgentDebugProtocol {
         case 'Target.detachFromTarget':
           return { id, result: this.requireDetached(sessionId) ?? this.fail('session_not_found', 'Agent Debug session was not found', sessionId) }
         case 'Cordis.enable':
-          return { id, result: this.enable(sessionId, 'Cordis') }
+          return { id, result: this.enable(sessionId, 'Cordis'), sessionId }
         case 'Cordis.disable':
-          return { id, result: this.enable(sessionId, 'Cordis', false) }
+          return { id, result: this.enable(sessionId, 'Cordis', false), sessionId }
         case 'Cordis.getSnapshot':
           return { id, result: this.debug.debugSnapshot({ debugSessionId: this.requireActiveSessionId(sessionId), ...readSnapshotParams(params) }), sessionId }
+        case 'Cordis.readEvents': {
+          const debugSessionId = this.requireActiveSessionId(sessionId)
+          return { id, result: this.readEvents({ debugSessionId, ...readReadEventsParams(params) }), sessionId }
+        }
         case 'Cordis.getEvent':
           this.requireActiveSessionId(sessionId)
           return { id, result: this.diagnostics.inspectEvent(readRequiredString(params, 'name')), sessionId }
@@ -98,9 +103,9 @@ export class AgentDebugProtocol {
           this.requireActiveSessionId(sessionId)
           return { id, result: this.diagnostics.inspectFiber(readFiberSelector(params)), sessionId }
         case 'Profiler.enableEvents':
-          return { id, result: this.enable(sessionId, 'Profiler') }
+          return { id, result: this.enable(sessionId, 'Profiler'), sessionId }
         case 'Profiler.disableEvents':
-          return { id, result: this.enable(sessionId, 'Profiler', false) }
+          return { id, result: this.enable(sessionId, 'Profiler', false), sessionId }
         case 'Profiler.getStatus':
           this.requireActiveSessionId(sessionId)
           return { id, result: this.diagnostics.waterfallExperimentStatus(), sessionId }
@@ -228,6 +233,28 @@ function readOptionalNumberParam(value: Record<string, unknown>, key: string): R
   if (field === undefined) return {}
   if (typeof field !== 'number' || !Number.isFinite(field)) throw new ProtocolRequestError('invalid_params', `${key} must be a finite number`)
   return { [key]: field }
+}
+
+/** Reads an optional non-negative integer protocol event cursor. */
+function readOptionalNonNegativeIntegerParam(value: Record<string, unknown>, key: string): Record<string, number> {
+  const field = value[key]
+  if (field === undefined) return {}
+  if (typeof field !== 'number' || !Number.isInteger(field) || field < 0) throw new ProtocolRequestError('invalid_params', `${key} must be a non-negative integer`)
+  return { [key]: field }
+}
+
+/** Reads the wire parameters for a session-scoped retained-event command. */
+function readReadEventsParams(value: Record<string, unknown>): Pick<DevtoolsProtocolReadEventsInput, 'afterSequence' | 'method' | 'event'> {
+  const methodValue = value.method
+  const method = methodValue === undefined ? undefined : readRequiredString(value, 'method')
+  if (method !== undefined && !isProtocolEvent(method)) throw new ProtocolRequestError('invalid_params', 'method contains unsupported protocol event')
+  const event = value.event === undefined ? undefined : readRequiredString(value, 'event')
+  const afterSequence = readOptionalNonNegativeIntegerParam(value, 'afterSequence').afterSequence
+  return {
+    ...(afterSequence === undefined ? {} : { afterSequence }),
+    ...(method === undefined ? {} : { method }),
+    ...(event === undefined ? {} : { event }),
+  }
 }
 
 /** Reads the mutually exclusive uid/name selector for Fiber.get. */
