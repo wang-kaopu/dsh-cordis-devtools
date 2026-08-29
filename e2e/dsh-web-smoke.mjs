@@ -108,6 +108,13 @@ try {
     'cordis_debug_snapshot',
     'cordis_wait_for_runtime_change',
     'cordis_detach_debug_session',
+    'cordis_devtools_get_protocol',
+    'cordis_devtools_list_targets',
+    'cordis_devtools_attach',
+    'cordis_devtools_send',
+    'cordis_devtools_read_events',
+    'cordis_devtools_wait_for_event',
+    'cordis_devtools_detach',
   ])
 
   const targetsResult = await mcpClient.callTool({
